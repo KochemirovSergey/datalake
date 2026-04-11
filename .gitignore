@@ -1,0 +1,9 @@
+/.venv
+/data
+/catalog
+/.tmp_dagster_home_e5gdqng_
+dagster_project/dagster_project.egg-info/PKG-INFO
+*/__pycache__/
+*.__pycache__
+*.pyc
+logs/

@@ -1,0 +1,7 @@
+setup.py
+assets/__init__.py
+assets/bronze_assets.py
+dagster_project.egg-info/PKG-INFO
+dagster_project.egg-info/SOURCES.txt
+dagster_project.egg-info/dependency_links.txt
+dagster_project.egg-info/top_level.txt
