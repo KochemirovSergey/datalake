@@ -1,0 +1,40 @@
+sources:
+  - source_id: "doshkolka"
+    description: "Дети в дошкольных учреждениях"
+    # Фильтр по полю source_file в bronze.excel_tables
+    source_filter: "Дошколка"
+
+    region:
+      # Регион в каждой строке данных (col_0)
+      location: "row"
+      row_column: "col_0"
+
+    year:
+      # Год уже записан в bronze.excel_tables.year (из имени папки)
+      location: "bronze_field"
+      year_type: "period"
+
+  - source_id: "naselenie"
+    description: "Численность населения по регионам"
+    source_filter: "Население"
+
+    region:
+      # Регион на уровне листа: одно название на весь лист.
+      # Обрабатываются только листы вида 2.X.Y (субъекты РФ).
+      # Местонахождение заголовка зависит от года:
+      #   year <= 2020: row_num=3, col_1  ("Таб.2.X.Y" формат)
+      #   year >= 2021: row_num=1, col_0  ("2.X.Y."   формат)
+      location: "meta_sheet"
+
+      # Листы, которые нужно карантинировать до попытки извлечь регион.
+      # Нормализованное имя листа (strip "Таб.", strip trailing dots) → причина.
+      # Используется когда заголовок листа содержит просто название региона,
+      # но сам лист является агрегатом нескольких субъектов РФ.
+      quarantine_sheets:
+        "2.2.3": "aggregate ARK+NEN: Архангельская область включая НАО — НАО учитывается отдельно"
+        "2.6.3": "aggregate TYU+KHM+YAN: Тюменская область включая ХМАО и ЯНАО — они учитываются отдельно"
+
+    year:
+      # Год уже записан в bronze.excel_tables.year (из имени файла _YYYY.xlsx)
+      location: "bronze_field"
+      year_type: "period"

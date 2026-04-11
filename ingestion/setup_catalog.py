@@ -20,7 +20,7 @@ catalog = SqlCatalog(
     },
 )
 
-for ns in ["bronze", "silver", "gold"]:
+for ns in ["bronze", "bronze_normalized", "silver", "gold"]:
     try:
         catalog.create_namespace(ns)
         print(f"Created namespace: {ns}")
@@ -59,6 +59,80 @@ doshkolka_schema = Schema(
     NestedField(5, "age_group",       StringType(), required=True),
     NestedField(6, "value",           LongType(),   required=False),
 )
+# ── bronze_normalized: 4 таблицы нормализационного подслоя ────────────────────
+
+region_ok_schema = Schema(
+    NestedField(1,  "row_id",           StringType(),  required=True),
+    NestedField(2,  "source_id",        StringType(),  required=True),
+    NestedField(3,  "source_file",      StringType(),  required=True),
+    NestedField(4,  "sheet_name",       StringType(),  required=True),
+    NestedField(5,  "year",             IntegerType(), required=True),
+    NestedField(6,  "row_num",          IntegerType(), required=True),
+    NestedField(7,  "region_raw",       StringType(),  required=True),
+    NestedField(8,  "region_code",      StringType(),  required=True),
+    NestedField(9,  "resolution_scope", StringType(),  required=True),
+    NestedField(10, "normalized_key",   StringType(),  required=True),
+)
+try:
+    catalog.create_table("bronze_normalized.region", schema=region_ok_schema)
+    print("Created table: bronze_normalized.region")
+except Exception:
+    print("Table already exists: bronze_normalized.region")
+
+region_error_schema = Schema(
+    NestedField(1,  "row_id",           StringType(),  required=True),
+    NestedField(2,  "source_id",        StringType(),  required=True),
+    NestedField(3,  "source_file",      StringType(),  required=True),
+    NestedField(4,  "sheet_name",       StringType(),  required=True),
+    NestedField(5,  "year",             IntegerType(), required=True),
+    NestedField(6,  "row_num",          IntegerType(), required=True),
+    NestedField(7,  "region_raw",       StringType(),  required=True),
+    NestedField(8,  "error_type",       StringType(),  required=True),
+    NestedField(9,  "resolution_scope", StringType(),  required=True),
+    NestedField(10, "normalized_key",   StringType(),  required=True),
+)
+try:
+    catalog.create_table("bronze_normalized.region_error", schema=region_error_schema)
+    print("Created table: bronze_normalized.region_error")
+except Exception:
+    print("Table already exists: bronze_normalized.region_error")
+
+year_ok_schema = Schema(
+    NestedField(1,  "row_id",           StringType(),  required=True),
+    NestedField(2,  "source_id",        StringType(),  required=True),
+    NestedField(3,  "source_file",      StringType(),  required=True),
+    NestedField(4,  "sheet_name",       StringType(),  required=True),
+    NestedField(5,  "row_num",          IntegerType(), required=True),
+    NestedField(6,  "year",             IntegerType(), required=True),
+    NestedField(7,  "year_type",        StringType(),  required=True),
+    NestedField(8,  "date_raw",         StringType(),  required=False),
+    NestedField(9,  "year_raw",         StringType(),  required=False),
+    NestedField(10, "resolution_scope", StringType(),  required=True),
+)
+try:
+    catalog.create_table("bronze_normalized.year", schema=year_ok_schema)
+    print("Created table: bronze_normalized.year")
+except Exception:
+    print("Table already exists: bronze_normalized.year")
+
+year_error_schema = Schema(
+    NestedField(1, "row_id",           StringType(),  required=True),
+    NestedField(2, "source_id",        StringType(),  required=True),
+    NestedField(3, "source_file",      StringType(),  required=True),
+    NestedField(4, "sheet_name",       StringType(),  required=True),
+    NestedField(5, "row_num",          IntegerType(), required=True),
+    NestedField(6, "year_raw",         StringType(),  required=True),
+    NestedField(7, "error_type",       StringType(),  required=True),
+    NestedField(8, "resolution_scope", StringType(),  required=True),
+)
+try:
+    catalog.create_table("bronze_normalized.year_error", schema=year_error_schema)
+    print("Created table: bronze_normalized.year_error")
+except Exception:
+    print("Table already exists: bronze_normalized.year_error")
+
+# ── Silver ─────────────────────────────────────────────────────────────────────
+
 try:
     catalog.create_table("silver.doshkolka", schema=doshkolka_schema)
     print("Created table: silver.doshkolka")

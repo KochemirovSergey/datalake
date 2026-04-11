@@ -25,6 +25,10 @@ def run() -> int:
 
     regions: dict[str, str] = data["regions"]       # canonical_name → code
     typo_fixes: dict[str, str] = data["typoFixes"]  # slug_alias → canonical_name
+    # quarantine: нормализованное_название → описание причины.
+    # Эти варианты — агрегаты нескольких субъектов РФ; в данных они дублируют
+    # информацию, которая уже учтена через отдельные субъекты.
+    quarantine: dict[str, str] = data.get("quarantine", {})
 
     # Инвертируем typoFixes: canonical_name → [slug_aliases]
     aliases_by_canonical: dict[str, list[str]] = {}
@@ -57,6 +61,16 @@ def run() -> int:
                 "region_code":    code,
                 "is_alias":       True,
             })
+
+    # Quarantine-записи — агрегаты нескольких субъектов (is_alias=True, region_code="SKIP")
+    for variant, reason in quarantine.items():
+        print(f"  quarantine: {variant!r} → SKIP ({reason})")
+        records.append({
+            "name_variant":   variant,
+            "canonical_name": variant,
+            "region_code":    "SKIP",
+            "is_alias":       True,
+        })
 
     # Запись в Iceberg
     cat = SqlCatalog(
