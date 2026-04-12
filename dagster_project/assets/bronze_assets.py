@@ -79,20 +79,37 @@ def naselenie_bronze(context: AssetExecutionContext) -> None:
 
 
 @asset(
-    group_name="bronze_extraction",
-    description="Загружает data/regions.json в Bronze слой (bronze.region_lookup).",
+    group_name="bronze_lookups",
+    description=(
+        "Загружает data/regions.json в Bronze слой (bronze.region_lookup). "
+        "Справочник регионов РФ: 89 канонических субъектов + алиасы."
+    ),
 )
 def regions_bronze(context: AssetExecutionContext) -> None:
     from ingestion.json_loader import run
 
     count = run()
 
-    context.add_output_metadata(
-        {
-            "total_rows": MetadataValue.int(count),
-        }
-    )
+    context.add_output_metadata({"total_rows": MetadataValue.int(count)})
     context.log.info("Regions loaded: %d rows", count)
+    _refresh_views(context)
+
+
+@asset(
+    group_name="bronze_lookups",
+    description=(
+        "Загружает education_level_lookup.csv в Bronze слой (bronze.education_level_lookup). "
+        "Справочник уровней образования: коды 1–4.8b.2, метки, гранулярность."
+    ),
+)
+def education_level_lookup_bronze(context: AssetExecutionContext) -> None:
+    from ingestion.education_level_loader import run
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    count = run()
+
+    context.add_output_metadata({"total_rows": MetadataValue.int(count)})
+    context.log.info("Education level lookup loaded: %d rows", count)
     _refresh_views(context)
 
 

@@ -17,7 +17,7 @@ def _refresh_views(context: AssetExecutionContext) -> None:
 
 @asset(
     group_name="silver",
-    deps=["normalized_validation"],
+    deps=["normalized_row_gate"],
     description="Bronze → Silver: дошкольники по регионам, годам, возрастам и типу территории.",
 )
 def doshkolka_silver(context: AssetExecutionContext) -> None:
@@ -33,7 +33,7 @@ def doshkolka_silver(context: AssetExecutionContext) -> None:
 
 @asset(
     group_name="silver",
-    deps=["normalized_validation"],
+    deps=["normalized_row_gate"],
     description="Bronze → Silver: численность населения по субъектам РФ, полу и возрасту.",
 )
 def naselenie_silver(context: AssetExecutionContext) -> None:

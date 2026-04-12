@@ -38,6 +38,9 @@
 - `bronze_normalized.region_error` — строки, для которых регион не распознан
 - `bronze_normalized.year` — нормализованный год по каждой строке
 - `bronze_normalized.year_error` — строки, для которых год не распознан
+- `bronze_normalized.education_level` — нормализованный education_level (doshkolka=1.1; ОО — заглушки)
+- `bronze_normalized.education_level_error` — строки, для которых education_level не определён
+- `bronze_normalized.row_gate` — gate по трём измерениям; 97.6% строк ready_for_silver
 
 **Silver — реализован, читает из bronze_normalized:**
 - `silver.doshkolka` — 15 993 строки: регион × год × территория × возрастная группа × значение
@@ -51,6 +54,10 @@
 - `ingestion/excel_loader.py` — загрузчик Excel (`flat=True` для файлов с годом в имени)
 - `ingestion/json_loader.py` — загрузчик регионального справочника из JSON (бывший `regions_loader.py`)
 - `ingestion/postgres_loader.py` — загрузчик таблиц из PostgreSQL в Bronze (все значения → string)
+- `transformations/bronze_normalized/common.py` — общие утилиты + интерфейс DimensionProcessor
+- `transformations/bronze_normalized/education_level_pipeline.py` — нормализация education_level
+- `transformations/bronze_normalized/row_gate_pipeline.py` — gate по трём измерениям
+- `ingestion/education_level_loader.py` — загрузчик справочника education_level_lookup.csv
 - `transformations/silver_doshkolka.py` — Bronze → Silver (дошкольники), читает из bronze_normalized
 - `transformations/silver_naselenie.py` — Bronze → Silver (население), читает из bronze_normalized
 - `validation/validate_silver.py` — генерирует Markdown-отчёт покрытия для Silver-слоя
@@ -165,8 +172,26 @@ rural_both, rural_male, rural_female
   - `error_count` — строк без года
   - `breakdown` — по источнику: `doshkolka: ok=N error=M`, `naselenie: ok=N error=M`
 
+#### `normalized_education`
+- **Зависимости:** `doshkolka_bronze`, `postgres_bronze`, `education_level_lookup_bronze`
+- **Вызывает:** `transformations/bronze_normalized/education_level_pipeline.run(cat)`
+- **Пишет в:** `bronze_normalized.education_level` (ok), `bronze_normalized.education_level_error` (ошибки)
+- **Логика:** для каждого источника применяет правило из конфига:
+  - `location=source` (doshkolka): фиксированный код 1.1 для всех data-строк
+  - `location=column_metadata` (spo): извлекает код из колонок таблицы
+  - `location=stub` (oo, vo, pk): помечает как not_found до получения документации
+  - `required=false` (населenie): пропускает источник
+- **Статистика в UI:** ok_count, error_count, coverage, breakdown по источникам
+
+#### `normalized_row_gate`
+- **Зависимости:** `normalized_region`, `normalized_year`, `normalized_education`
+- **Вызывает:** `transformations/bronze_normalized/row_gate_pipeline.run(cat)`
+- **Пишет в:** `bronze_normalized.row_gate` (overwrite при каждом запуске)
+- **Логика:** объединяет три измерения по row_id; `ready_for_silver` = True если все required-измерения = ok
+- **Статистика в UI:** total, ready, not_ready, ready_pct
+
 #### `normalized_validation`
-- **Зависимости:** `normalized_region`, `normalized_year`
+- **Зависимости:** `normalized_row_gate`
 - **Вызывает:** `validation/validate_bronze_normalized.run(cat)`
 - **Генерирует:** Markdown-отчёт в `reports/bronze_normalized_YYYY-MM-DD.md`
 - **Содержимое отчёта:**

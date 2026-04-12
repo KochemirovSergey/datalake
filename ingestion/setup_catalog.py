@@ -148,6 +148,75 @@ except Exception:
 
 # ── Silver ─────────────────────────────────────────────────────────────────────
 
+# ── bronze.education_level_lookup ─────────────────────────────────────────────
+
+edu_level_lookup_schema = Schema(
+    NestedField(1, "code",               StringType(), required=True),
+    NestedField(2, "label_ru",           StringType(), required=True),
+    NestedField(3, "kind_code",          StringType(), required=False),
+    NestedField(4, "kind_label",         StringType(), required=False),
+    NestedField(5, "level_code",         StringType(), required=False),
+    NestedField(6, "level_label",        StringType(), required=False),
+    NestedField(7, "program_code",       StringType(), required=False),
+    NestedField(8, "program_label",      StringType(), required=False),
+    NestedField(9, "granularity_level",  StringType(), required=True),
+)
+try:
+    catalog.create_table("bronze.education_level_lookup", schema=edu_level_lookup_schema)
+    print("Created table: bronze.education_level_lookup")
+except Exception:
+    print("Table already exists: bronze.education_level_lookup")
+
+# ── bronze_normalized.education_level ─────────────────────────────────────────
+
+edu_level_ok_schema = Schema(
+    NestedField(1, "row_id",           StringType(), required=True),
+    NestedField(2, "source_id",        StringType(), required=True),
+    NestedField(3, "raw_signal",       StringType(), required=False),
+    NestedField(4, "resolved_code",    StringType(), required=True),
+    NestedField(5, "resolved_label",   StringType(), required=True),
+    NestedField(6, "rule_id",          StringType(), required=True),
+    NestedField(7, "resolution_scope", StringType(), required=True),
+)
+try:
+    catalog.create_table("bronze_normalized.education_level", schema=edu_level_ok_schema)
+    print("Created table: bronze_normalized.education_level")
+except Exception:
+    print("Table already exists: bronze_normalized.education_level")
+
+edu_level_err_schema = Schema(
+    NestedField(1, "row_id",           StringType(), required=True),
+    NestedField(2, "source_id",        StringType(), required=True),
+    NestedField(3, "raw_signal",       StringType(), required=False),
+    NestedField(4, "rule_id",          StringType(), required=True),
+    NestedField(5, "resolution_scope", StringType(), required=True),
+    NestedField(6, "error_type",       StringType(), required=True),
+    NestedField(7, "error_reason",     StringType(), required=False),
+)
+try:
+    catalog.create_table("bronze_normalized.education_level_error", schema=edu_level_err_schema)
+    print("Created table: bronze_normalized.education_level_error")
+except Exception:
+    print("Table already exists: bronze_normalized.education_level_error")
+
+# ── bronze_normalized.row_gate ─────────────────────────────────────────────────
+
+row_gate_schema = Schema(
+    NestedField(1, "row_id",                 StringType(),  required=True),
+    NestedField(2, "source_id",              StringType(),  required=True),
+    NestedField(3, "region_status",          StringType(),  required=True),
+    NestedField(4, "year_status",            StringType(),  required=True),
+    NestedField(5, "education_level_status", StringType(),  required=True),
+    NestedField(6, "all_required_ok",        BooleanType(), required=True),
+    NestedField(7, "ready_for_silver",       BooleanType(), required=True),
+    NestedField(8, "rejection_reason",       StringType(),  required=True),
+)
+try:
+    catalog.create_table("bronze_normalized.row_gate", schema=row_gate_schema)
+    print("Created table: bronze_normalized.row_gate")
+except Exception:
+    print("Table already exists: bronze_normalized.row_gate")
+
 try:
     catalog.create_table("silver.doshkolka", schema=doshkolka_schema)
     print("Created table: silver.doshkolka")

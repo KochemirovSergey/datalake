@@ -1,40 +1,108 @@
 sources:
+  # ── Excel-источники ──────────────────────────────────────────────────────────
+
   - source_id: "doshkolka"
     description: "Дети в дошкольных учреждениях"
-    # Фильтр по полю source_file в bronze.excel_tables
     source_filter: "Дошколка"
 
     region:
-      # Регион в каждой строке данных (col_0)
       location: "row"
       row_column: "col_0"
 
     year:
-      # Год уже записан в bronze.excel_tables.year (из имени папки)
       location: "bronze_field"
       year_type: "period"
+
+    education_level:
+      # Rule 1 (source_level): весь источник — дошкольное образование
+      location: "source"
+      rule_id: "R1_doshkolka"
+      resolved_code: "1.1"
+      required: true
 
   - source_id: "naselenie"
     description: "Численность населения по регионам"
     source_filter: "Население"
 
     region:
-      # Регион на уровне листа: одно название на весь лист.
-      # Обрабатываются только листы вида 2.X.Y (субъекты РФ).
-      # Местонахождение заголовка зависит от года:
-      #   year <= 2020: row_num=3, col_1  ("Таб.2.X.Y" формат)
-      #   year >= 2021: row_num=1, col_0  ("2.X.Y."   формат)
       location: "meta_sheet"
-
-      # Листы, которые нужно карантинировать до попытки извлечь регион.
-      # Нормализованное имя листа (strip "Таб.", strip trailing dots) → причина.
-      # Используется когда заголовок листа содержит просто название региона,
-      # но сам лист является агрегатом нескольких субъектов РФ.
       quarantine_sheets:
         "2.2.3": "aggregate ARK+NEN: Архангельская область включая НАО — НАО учитывается отдельно"
         "2.6.3": "aggregate TYU+KHM+YAN: Тюменская область включая ХМАО и ЯНАО — они учитываются отдельно"
 
     year:
-      # Год уже записан в bronze.excel_tables.year (из имени файла _YYYY.xlsx)
       location: "bronze_field"
       year_type: "period"
+
+    education_level:
+      # Демографические данные — измерение education_level неприменимо
+      required: false
+
+  # ── PostgreSQL-источники (СПО) ───────────────────────────────────────────────
+
+  - source_id: "spo_1_r2"
+    description: "СПО — приём и выпуск по программам"
+    table_type: "postgres"
+    table_name: "спо_1_р2_101_43"
+
+    education_level:
+      # Rule 4 (column_metadata): определяем программу по column_metadata_2
+      location: "column_metadata"
+      metadata_axes:
+        - column: "column_metadata_2"
+          mapping:
+            "Программы подготовки специалистов среднего звена": "2.5.2"
+            "Программы подготовки квалифицированных рабочих, служащих": "2.5.1"
+      # fallback на "2.5" если ни одна программа не определена, но источник точно СПО
+      fallback_code: "2.5"
+      required: true
+
+  # ── PostgreSQL-источники (ОО) ─────────────────────────────────────────────────
+  # Правила extraction не определены — ожидается документация источников
+
+  - source_id: "oo_1_2_7_2_211"
+    description: "ОО — форма 1-2.7/2 (211)"
+    table_type: "postgres"
+    table_name: "oo_1_2_7_2_211"
+
+    education_level:
+      # Rule 2 (source_level): ОО — заглушка до получения документации
+      location: "stub"
+      note: "ОО-документация не получена; правила extraction будут добавлены в Этапе 8"
+      required: true
+
+  - source_id: "oo_1_2_7_1_209"
+    description: "ОО — форма 1-2.7/1 (209)"
+    table_type: "postgres"
+    table_name: "oo_1_2_7_1_209"
+
+    education_level:
+      location: "stub"
+      note: "ОО-документация не получена; правила extraction будут добавлены в Этапе 8"
+      required: true
+
+  # ── PostgreSQL-источники (ВПО) ────────────────────────────────────────────────
+  # Правила extraction не определены — ожидается документация источников
+
+  - source_id: "впо_1_р2"
+    description: "ВПО — форма 1-Р2"
+    table_type: "postgres"
+    table_name: "впо_1_р2_13_54"
+
+    education_level:
+      # Rule 3 (source_level): ВО — заглушка до получения документации
+      location: "stub"
+      note: "ВО-документация не получена; правила extraction будут добавлены в Этапе 8"
+      required: true
+
+  # ── PostgreSQL-источники (ПК) ─────────────────────────────────────────────────
+
+  - source_id: "пк_1_2_4"
+    description: "ПК — повышение квалификации, форма 1-2.4"
+    table_type: "postgres"
+    table_name: "пк_1_2_4_180"
+
+    education_level:
+      location: "stub"
+      note: "ПК-документация не получена; правила extraction будут добавлены в Этапе 8"
+      required: true

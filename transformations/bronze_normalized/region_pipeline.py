@@ -323,6 +323,12 @@ def run(cat: SqlCatalog, config_path: str = DEFAULT_CONFIG_PATH) -> dict:
 
     for src in sources:
         source_id = src["source_id"]
+
+        # PostgreSQL-источники не имеют region-конфига и source_filter — пропускаем
+        if "source_filter" not in src or "region" not in src:
+            log.info("[%s] Нет source_filter/region в конфиге, пропускаю", source_id)
+            continue
+
         source_filter = src["source_filter"]
         region_cfg = src["region"]
         location = region_cfg["location"]
