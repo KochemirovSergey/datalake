@@ -19,7 +19,7 @@
 - **DuckDB** — `datalake.duckdb`, вьюхи пересоздаются через `scripts/refresh_duckdb.py`
 - **Dagster** — оркестрация, граф assets, UI на `http://localhost:3000`
 
-### Данные — загружены
+### Данные — загружены и обработаны
 
 **Bronze:**
 - `bronze.excel_tables` — все листы всех Excel-файлов в сыром виде (col_0..col_163)
@@ -33,31 +33,15 @@
   - `bronze.впо_1_р2_13_54` ← `public.впо_1_р2_13_54`
   - `bronze.пк_1_2_4_180` ← `public.пк_1_2_4_180`
 
-**Bronze Normalized** ← следующий этап (ТЗ: `docs/tz_bronze_normalized.md`):
+**Bronze Normalized — реализован:**
 - `bronze_normalized.region` — нормализованный регион по каждой строке
 - `bronze_normalized.region_error` — строки, для которых регион не распознан
 - `bronze_normalized.year` — нормализованный год по каждой строке
 - `bronze_normalized.year_error` — строки, для которых год не распознан
 
-**Silver:**
+**Silver — реализован, читает из bronze_normalized:**
 - `silver.doshkolka` — 15 993 строки: регион × год × территория × возрастная группа × значение
 - `silver.naselenie` — регион × год × возраст (0–79, 80+) × 9 числовых показателей (пол × тип территории)
-
-### Dagster assets
-
-```
-bronze:            excel_bronze            (data/Дошколка/ → bronze.excel_tables)
-                   population_bronze       (data/Население/ → bronze.excel_tables)
-                   regions_bronze          (data/regions.json → bronze.region_lookup)
-                   postgres_bronze         (PostgreSQL etl_db → bronze.oo_*/спо_*/впо_*/пк_*)
-
-bronze_normalized: normalized_region       (deps: excel_bronze, regions_bronze)     ← планируется
-                   normalized_year         (deps: excel_bronze, normalized_region)   ← планируется
-                   normalized_validation   (deps: normalized_region, normalized_year) ← планируется
-
-silver:            doshkolka_silver        (deps: excel_bronze, regions_bronze)
-                   naselenie_silver        (deps: population_bronze, regions_bronze)
-```
 
 ### Скрипты
 
@@ -67,8 +51,10 @@ silver:            doshkolka_silver        (deps: excel_bronze, regions_bronze)
 - `ingestion/excel_loader.py` — загрузчик Excel (`flat=True` для файлов с годом в имени)
 - `ingestion/json_loader.py` — загрузчик регионального справочника из JSON (бывший `regions_loader.py`)
 - `ingestion/postgres_loader.py` — загрузчик таблиц из PostgreSQL в Bronze (все значения → string)
-- `transformations/silver_doshkolka.py` — Bronze → Silver (дошкольники)
-- `transformations/silver_naselenie.py` — Bronze → Silver (население)
+- `transformations/silver_doshkolka.py` — Bronze → Silver (дошкольники), читает из bronze_normalized
+- `transformations/silver_naselenie.py` — Bronze → Silver (население), читает из bronze_normalized
+- `validation/validate_silver.py` — генерирует Markdown-отчёт покрытия для Silver-слоя
+- `validation/validate_silver_doshkolka.py` — детальная матрица region × year для doshkolka
 
 ### Схемы Silver-таблиц
 
@@ -114,125 +100,148 @@ rural_both, rural_male, rural_female
 
 ***
 
-## Следующий этап: bronze_normalized
+## Граф Dagster assets — подробное описание
 
-### Зачем
+### Группа `bronze_extraction`
 
-Логика распознавания региона сейчас встроена локально в `silver_doshkolka.py`.
-Это неустойчиво: при добавлении новых источников каждая silver-трансформация
-вынуждена повторять аналогичную логику самостоятельно.
+#### `doshkolka_bronze`
+- **Источник:** `data/Дошколка/YYYY/*.xlsx`
+- **Вызывает:** `ingestion/excel_loader.run()`
+- **Пишет в:** `bronze.excel_tables`
+- **Статистика в UI:**
+  - `total_rows` — общее число загруженных строк
+  - `files_loaded` — количество файлов
+  - `sheets_loaded` — количество листов
+  - `breakdown` — таблица: год / файл / лист → кол-во строк
 
-Нужен ранний нормализационный подслой внутри bronze, который централизованно
-определяет **регион** и **год** для всех входных данных, прежде чем они попадают
-в предметные silver-трансформации.
+#### `naselenie_bronze`
+- **Источник:** `data/Население/Бюллетень_YYYY.xlsx`
+- **Вызывает:** `ingestion/excel_loader.run(data_dir=..., flat=True)`
+- **Пишет в:** `bronze.excel_tables`
+- **Статистика в UI:**
+  - `total_rows` — общее число загруженных строк
+  - `new_sheets` — количество новых листов
 
-**Полное ТЗ:** `docs/tz_bronze_normalized.md`
+#### `regions_bronze`
+- **Источник:** `data/regions.json`
+- **Вызывает:** `ingestion/json_loader.run()`
+- **Пишет в:** `bronze.region_lookup`
+- **Статистика в UI:**
+  - `total_rows` — количество записей (0 если уже загружено)
 
-### Ключевые решения
+#### `postgres_bronze`
+- **Источник:** PostgreSQL `etl_db` (localhost:5432), 5 таблиц:
+  `oo_1_2_7_2_211`, `oo_1_2_7_1_209`, `спо_1_р2_101_43`, `впо_1_р2_13_54`, `пк_1_2_4_180`
+- **Вызывает:** `ingestion/postgres_loader.run()`
+- **Пишет в:** `bronze.<table_name>` (схема создаётся динамически по introspection)
+- **Статистика в UI:**
+  - `total_rows` — суммарное число строк по всем таблицам
+  - `breakdown` — список: `source_table → N строк` (или «пропущено» если уже загружено)
 
-- Два независимых Dagster asset: `normalized_region` и `normalized_year`
-- Объект нормализации — **гибридный**: регион/год могут быть на уровне строки,
-  листа, файла или папки; контекст наследуется от документа к строке
-- Эталонный справочник региона — `bronze.region_lookup` (уже в БД)
-- Строки, у которых не распознан **хотя бы один** из двух признаков (регион или год),
-  уходят в error/quarantine и **не попадают** в silver-слои
-- Человек задаёт конфигурацию источников в `ingestion/normalization_config.yaml`
+---
 
-### Два пайплайна нормализации региона
+### Группа `bronze_normalized`
 
-**row-based** — регион в строках таблицы:
-1. Читать колонку из конфига
-2. Нормализовать название через `normalize_region_name()`
-3. Искать в `region_lookup`
-4. ok → `bronze_normalized.region`, не найден → `bronze_normalized.region_error`
+#### `normalized_region`
+- **Зависимости:** `doshkolka_bronze`, `naselenie_bronze`, `regions_bronze`
+- **Вызывает:** `transformations/bronze_normalized/region_pipeline.run(cat)`
+- **Пишет в:** `bronze_normalized.region` (ok), `bronze_normalized.region_error` (не распознано)
+- **Логика:** для каждой строки Excel определяет регион через `region_lookup`;
+  строки без совпадения уходят в `region_error`
+- **Статистика в UI:**
+  - `total_rows` — всего обработано строк
+  - `ok_count` — успешно распознано
+  - `error_count` — не распознано
+  - `coverage` — процент покрытия (`ok / total`)
+  - `breakdown` — по источнику: `doshkolka: ok=N error=M`, `naselenie: ok=N error=M`
 
-**document-based** — регион в названии листа / файла / папки:
-1. Извлечь название из конфига (паттерн или прямое поле)
-2. Нормализовать и найти регион
-3. ok → наследовать всем строкам документа
-4. не найден → все строки документа → `bronze_normalized.region_error`
+#### `normalized_year`
+- **Зависимости:** `doshkolka_bronze`, `naselenie_bronze`, `normalized_region`
+- **Вызывает:** `transformations/bronze_normalized/year_pipeline.run(cat)`
+- **Пишет в:** `bronze_normalized.year` (ok), `bronze_normalized.year_error` (не распознано)
+- **Логика:** определяет отчётный год из имени файла / папки / заголовка листа
+- **Статистика в UI:**
+  - `ok_count` — строк с распознанным годом
+  - `error_count` — строк без года
+  - `breakdown` — по источнику: `doshkolka: ok=N error=M`, `naselenie: ok=N error=M`
 
-Для реестра лицензий: сначала поле `subject_rf`, если пусто — парсить `address`.
+#### `normalized_validation`
+- **Зависимости:** `normalized_region`, `normalized_year`
+- **Вызывает:** `validation/validate_bronze_normalized.run(cat)`
+- **Генерирует:** Markdown-отчёт в `reports/bronze_normalized_YYYY-MM-DD.md`
+- **Содержимое отчёта:**
+  1. Покрытие по регионам — сколько из 89 канонических регионов представлено, строк на регион
+  2. Покрытие по годам — какие годы распознаны, сколько строк по каждому
+  3. Матрица `region × year` — ключевая таблица; пустые ячейки = нет данных
+  4. Error summary — Top-20 нераспознанных `region_raw`, распределение по типам ошибок
+- **Статистика в UI:**
+  - `report_path` — путь к сохранённому отчёту
+- **Назначение:** человек смотрит матрицу и решает, достаточно ли покрытие для перехода к Silver
 
-### Нормализация года
+---
 
-- `year_type: period` — год как отчётный период (статистика), хранить только `year`
-- `year_type: exact_date` — точная дата (реестр лицензий), хранить `date_raw` + `year`
-- Источники для поиска: поле строки, заголовок, название листа, имя файла, папка
+### Группа `silver`
 
-### Валидация покрытия (выход этапа)
+#### `doshkolka_silver`
+- **Зависимости:** `normalized_validation`
+- **Вызывает:** `transformations/silver_doshkolka.run()`
+- **Читает из:** `bronze_normalized.region` + `bronze_normalized.year` (пересечение по `row_id`),
+  затем джойнит с `bronze.excel_tables` для получения числовых значений
+- **Пишет в:** `silver.doshkolka`
+- **Логика:** unpivot — одна строка = регион × год × территория (total/urban/rural) × возраст
+- **Статистика в UI:**
+  - `total_rows` — количество записей в Silver (≈15 993)
 
-Dagster asset `normalized_validation` генерирует отчёт:
+#### `naselenie_silver`
+- **Зависимости:** `normalized_validation`
+- **Вызывает:** `transformations/silver_naselenie.run()`
+- **Читает из:** `bronze_normalized.region` + `bronze_normalized.year`,
+  джойнит с `bronze.excel_tables`
+- **Пишет в:** `silver.naselenie`
+- **Логика:** каждая строка = регион × год × возраст (0–79, 80+) × 9 показателей
+- **Статистика в UI:**
+  - `total_rows` — количество записей в Silver
 
-1. **Покрытие по регионам** — сколько регионов из `bronze.region_lookup` представлено в данных,
-   сколько строк по каждому региону
-2. **Покрытие по годам** — какие годы распознаны, сколько строк по каждому году
-3. **Матрица region × year** — ключевая таблица: по каким регионам и годам реально есть данные;
-   регионы без данных помечаются явно
-4. **Error summary** — Top-20 нераспознанных `region_raw`, распределение по типам ошибок
+#### `silver_validation`
+- **Зависимости:** `doshkolka_silver`, `naselenie_silver`
+- **Вызывает:** `validation/validate_silver.run(cat)`
+- **Генерирует:** Markdown-отчёт в `reports/silver_YYYY-MM-DD.md`
+- **Содержимое отчёта:**
+  - §1 `silver.doshkolka` — покрытие регионов, годов, матрица `region × year`
+  - §2 `silver.naselenie` — покрытие регионов, годов, матрица `region × year`
+- **Статистика в UI:**
+  - `report_path` — путь к отчёту
+- **Назначение:** финальная проверка перед Gold-слоем
 
-**Это и есть валидация нормализации.** Человек смотрит отчёт и решает, достаточно ли покрытие
-для перехода к следующему слою.
+---
 
-### Порядок реализации
+### Порядок выполнения (полный пайплайн)
 
-1. Создать `ingestion/normalization_config.yaml` для источников `doshkolka`, `naselenie`
-2. Добавить таблицы в `ingestion/setup_catalog.py` (4 новые Iceberg-таблицы)
-3. Реализовать `transformations/bronze_normalized/region_normalizer.py`
-   (перенести `normalize_region_name()` из `silver_doshkolka.py`)
-4. Реализовать `transformations/bronze_normalized/year_normalizer.py`
-5. Создать Dagster assets в `dagster_project/assets/bronze_normalized_assets.py`
-6. Добавить assets в `dagster_project/definitions.py`
-7. Обновить `scripts/refresh_duckdb.py` — добавить вьюхи для новых таблиц
-8. Запустить, изучить матрицу покрытия, убедиться в полноте распознавания
-
-***
-
-## Этап после bronze_normalized: Silver → переработка
-
-После того как `bronze_normalized` готов и матрица покрытия выглядит корректно:
-
-- `silver_doshkolka.py` и `silver_naselenie.py` переключаются на чтение
-  нормализованных полей из `bronze_normalized` вместо самостоятельного поиска региона/года
-- Логика `normalize_region_name()` удаляется из `silver_doshkolka.py` — она уже живёт
-  в `region_normalizer.py`
-- Это отдельное ТЗ
-
-***
-
-## Этап после Silver: система валидации Silver
-
-После переработки silver-трансформаций:
-
-### Что проверяем
-
-**Блок 1 — Полнота (completeness):**
-- Все 85 субъектов РФ присутствуют в каждом году (2018–2024) — для обоих Silver
-- Нет NULL в `total_both` (ключевой показатель)
-
-**Блок 2 — Арифметическая консистентность:**
-- `total_both = total_male + total_female` (допуск ±1 на округление)
-- `total_both ≈ urban_both + rural_both`
-- В `silver.doshkolka`: сумма `age_0..age_7plus` ≤ `total`
-
-**Блок 3 — Динамика (trend checks):**
-- Год к году изменение по региону > 15% → WARNING
-- Значение = 0 там где не должно быть нуля → WARNING
-
-**Блок 4 — Кросс-источниковая согласованность:**
-- `silver.doshkolka.value` (age_0..age_6) ≤ `silver.naselenie.total_both` (тот же возраст и регион)
-- Нарушение → ERROR
-
-### Dagster asset `silver_validation`
-
-```python
-@asset(group_name="validation", deps=["doshkolka_silver", "naselenie_silver"])
-def silver_validation(context): ...
+```
+doshkolka_bronze  ──┐
+                    ├──► normalized_region ──┐
+naselenie_bronze  ──┤                        ├──► normalized_validation ──┐
+                    └──► normalized_year  ───┘                            │
+regions_bronze    ──┘                                                     │
+                                                                          ▼
+postgres_bronze  (независимо)                              doshkolka_silver ──┐
+                                                           naselenie_silver ──┴──► silver_validation
 ```
 
-Если есть ERROR — завершается с исключением, Gold-assets заблокированы.
+Каждый asset после записи данных вызывает `scripts/refresh_duckdb.py` —
+DuckDB-вьюхи обновляются автоматически, данные сразу доступны в DBeaver/SQL.
 
-**Правило:** Gold не строится пока `silver_validation` не прошёл без ERROR.
+***
+
+## Следующий этап: Gold-слой
+
+После прохождения `silver_validation` без ошибок строится Gold — аналитические агрегаты:
+
+- Демографический профиль региона: численность населения по возрастным когортам
+- Охват дошкольным образованием: отношение `silver.doshkolka` к `silver.naselenie`
+- Динамика год к году
+
+Детальное ТЗ — отдельный документ.
 
 ***
 
@@ -247,15 +256,16 @@ def silver_validation(context): ...
 
 ## Источники данных
 
-### Загружены
+### Загружены (Excel)
 - `data/Дошколка/YYYY/` — Excel, дети в ДОУ по регионам (2018–2024)
 - `data/Население/Бюллетень_YYYY.xlsx` — Excel, численность населения (2018–2024)
 - `data/regions.json` — справочник субъектов РФ с ISO-кодами и алиасами
 
 ### Загружены из PostgreSQL (etl_db, localhost:5432)
-- `public.oo_1_2_7_2_211`, `public.oo_1_2_7_1_209` — первые два источника
+- `public.oo_1_2_7_2_211`, `public.oo_1_2_7_1_209`
 - `public.спо_1_р2_101_43`, `public.впо_1_р2_13_54`, `public.пк_1_2_4_180`
 - Соединение: `SRC_DB` в `ingestion/postgres_loader.py`
+- Добавить таблицу: дописать в список `TABLES` в `postgres_loader.py`
 
 ### Планируется
 - Реестр лицензий — CSV или база, проектируется отдельно
@@ -269,7 +279,7 @@ def silver_validation(context): ...
 /datalake
   ├── CLAUDE.md
   ├── docs/
-  │   └── tz_bronze_normalized.md       ← ТЗ на bronze_normalized
+  │   └── tz_bronze_normalized.md
   ├── data/
   │   ├── Дошколка/YYYY/*.xlsx
   │   ├── Население/Бюллетень_YYYY.xlsx
@@ -278,34 +288,35 @@ def silver_validation(context): ...
   │   ├── catalog.db                    ← SQLite Iceberg catalog
   │   └── warehouse/                    ← Parquet-файлы таблиц
   ├── ingestion/
-  │   ├── setup_catalog.py
+  │   ├── setup_catalog.py              ← инициализация всех схем
   │   ├── excel_loader.py
   │   ├── json_loader.py                ← загрузчик regions.json (бывший regions_loader.py)
   │   ├── postgres_loader.py            ← загрузчик PostgreSQL → bronze
-  │   └── normalization_config.yaml     ← конфиг bronze_normalized (создать)
+  │   └── normalization_config.yaml     ← конфиг источников для bronze_normalized
   ├── transformations/
-  │   ├── bronze_normalized/            ← создать в рамках ТЗ
+  │   ├── bronze_normalized/
   │   │   ├── __init__.py
   │   │   ├── config_loader.py
   │   │   ├── region_normalizer.py
   │   │   ├── year_normalizer.py
   │   │   ├── region_pipeline.py
   │   │   └── year_pipeline.py
-  │   ├── silver_doshkolka.py
-  │   └── silver_naselenie.py
+  │   ├── silver_doshkolka.py           ← читает из bronze_normalized
+  │   └── silver_naselenie.py           ← читает из bronze_normalized
   ├── validation/
-  │   ├── validate_silver.py            ← этап после Silver
-  │   └── report.py
+  │   ├── validate_bronze_normalized.py ← отчёт по покрытию нормализации
+  │   ├── validate_silver.py            ← отчёт по покрытию Silver (оба источника)
+  │   └── validate_silver_doshkolka.py  ← детальная матрица region×year для doshkolka
   ├── dagster_project/
   │   ├── assets/
-  │   │   ├── bronze_assets.py
-  │   │   ├── bronze_normalized_assets.py  ← создать
-  │   │   └── silver_assets.py
+  │   │   ├── bronze_assets.py          ← 4 asset: doshkolka/naselenie/regions/postgres
+  │   │   ├── bronze_normalized_assets.py ← 3 asset: region/year/validation
+  │   │   └── silver_assets.py          ← 3 asset: doshkolka/naselenie/validation
   │   └── definitions.py
   ├── scripts/
   │   ├── refresh_duckdb.py
   │   └── reset.py
-  ├── reports/                          ← выходные отчёты
+  ├── reports/                          ← Markdown-отчёты (bronze_normalized, silver)
   ├── docker-compose.yml
   ├── datalake.duckdb
   └── requirements.txt
