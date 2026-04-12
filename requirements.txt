@@ -17,6 +17,9 @@ dagster-webserver>=1.7
 dagster-dbt>=0.23
 dagster-duckdb>=0.23
 
+# PostgreSQL
+psycopg2-binary>=2.9
+
 # Утилиты
 python-dotenv>=1.0
 pyarrow>=15.0
