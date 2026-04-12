@@ -170,13 +170,15 @@ except Exception:
 # ── bronze_normalized.education_level ─────────────────────────────────────────
 
 edu_level_ok_schema = Schema(
-    NestedField(1, "row_id",           StringType(), required=True),
-    NestedField(2, "source_id",        StringType(), required=True),
-    NestedField(3, "raw_signal",       StringType(), required=False),
-    NestedField(4, "resolved_code",    StringType(), required=True),
-    NestedField(5, "resolved_label",   StringType(), required=True),
-    NestedField(6, "rule_id",          StringType(), required=True),
-    NestedField(7, "resolution_scope", StringType(), required=True),
+    NestedField(1, "row_id",         StringType(), required=True),
+    NestedField(2, "source_table",   StringType(), required=True),
+    NestedField(3, "level_code",     StringType(), required=True),
+    NestedField(4, "level_label",    StringType(), required=True),
+    NestedField(5, "program_code",   StringType(), required=False),
+    NestedField(6, "program_label",  StringType(), required=False),
+    NestedField(7, "match_field",    StringType(), required=True),
+    NestedField(8, "match_value",    StringType(), required=True),
+    NestedField(9, "status",         StringType(), required=True),
 )
 try:
     catalog.create_table("bronze_normalized.education_level", schema=edu_level_ok_schema)
@@ -185,13 +187,12 @@ except Exception:
     print("Table already exists: bronze_normalized.education_level")
 
 edu_level_err_schema = Schema(
-    NestedField(1, "row_id",           StringType(), required=True),
-    NestedField(2, "source_id",        StringType(), required=True),
-    NestedField(3, "raw_signal",       StringType(), required=False),
-    NestedField(4, "rule_id",          StringType(), required=True),
-    NestedField(5, "resolution_scope", StringType(), required=True),
-    NestedField(6, "error_type",       StringType(), required=True),
-    NestedField(7, "error_reason",     StringType(), required=False),
+    NestedField(1, "row_id",         StringType(), required=True),
+    NestedField(2, "source_table",   StringType(), required=True),
+    NestedField(3, "match_field",    StringType(), required=False),
+    NestedField(4, "match_value",    StringType(), required=False),
+    NestedField(5, "error_type",     StringType(), required=True),
+    NestedField(6, "error_details",  StringType(), required=False),
 )
 try:
     catalog.create_table("bronze_normalized.education_level_error", schema=edu_level_err_schema)

@@ -1,6 +1,6 @@
 # Отчёт валидации bronze_normalized
 
-**Дата:** 2026-04-12 15:31 UTC
+**Дата:** 2026-04-12 22:07 UTC
 
 | таблица | строк |
 |---------|------:|
@@ -8,8 +8,8 @@
 | bronze_normalized.region_error | 3041 |
 | bronze_normalized.year (ok) | 150826 |
 | bronze_normalized.year_error | 0 |
-| bronze_normalized.education_level (ok) | 656793 |
-| bronze_normalized.education_level_error | 697487 |
+| bronze_normalized.education_level (ok) | 619618 |
+| bronze_normalized.education_level_error | 567213 |
 | bronze_normalized.row_gate | 124188 |
 | &nbsp;&nbsp;└ ready_for_silver=True | 121147 |
 
@@ -229,25 +229,7 @@
 
 ## Блок 4 — Покрытие по education_level
 
-**Всего строк:** 1354280 | ok: 656793 | error: 697487 | покрытие: 48.5%
-
-| resolved_code | label | строк |
-|--------------|-------|------:|
-| 1.1 | Дошкольное образование | 2008 |
-| 2.5 | Среднее профессиональное образование | 137259 |
-| 2.5.1 | СПО — квалифицированные рабочие, служащие | 111959 |
-| 2.5.2 | СПО — специалисты среднего звена | 405567 |
-
-**По источникам:**
-
-| source_id | ok | error |
-|-----------|---:|------:|
-| doshkolka | 2008 | 0 |
-| oo_1_2_7_1_209 | 0 | 148174 |
-| oo_1_2_7_2_211 | 0 | 56911 |
-| spo_1_r2 | 654785 | 0 |
-| впо_1_р2 | 0 | 452908 |
-| пк_1_2_4 | 0 | 39494 |
+**Всего строк:** 1186831 | ok: 619618 | error: 567213 | покрытие: 52.2%
 
 ---
 
@@ -300,8 +282,9 @@
 |-----------|-----------|------:|
 | region | aggregate_scope | 2810 |
 | region | unmatched | 231 |
-| education_level | not_found | 697487 |
-| **Итого** | | **700528** |
+| education_level | filter_not_matched | 540876 |
+| education_level | lookup_not_found | 26337 |
+| **Итого** | | **570254** |
 
 ### Топ-20 нераспознанных region_raw
 
