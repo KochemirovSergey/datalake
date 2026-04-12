@@ -59,6 +59,21 @@ doshkolka_schema = Schema(
     NestedField(5, "age_group",       StringType(), required=True),
     NestedField(6, "value",           LongType(),   required=False),
 )
+# ── bronze.region_lookup ──────────────────────────────────────────────────────
+
+from pyiceberg.types import BooleanType
+region_lookup_schema = Schema(
+    NestedField(1, "name_variant",   StringType(), required=True),
+    NestedField(2, "canonical_name", StringType(), required=True),
+    NestedField(3, "region_code",    StringType(), required=True),
+    NestedField(4, "is_alias",       BooleanType(), required=True),
+)
+try:
+    catalog.create_table("bronze.region_lookup", schema=region_lookup_schema)
+    print("Created table: bronze.region_lookup")
+except Exception:
+    print("Table already exists: bronze.region_lookup")
+
 # ── bronze_normalized: 4 таблицы нормализационного подслоя ────────────────────
 
 region_ok_schema = Schema(

@@ -1,12 +1,12 @@
 # Отчёт валидации bronze_normalized
 
-**Дата:** 2026-04-11 18:22 UTC
+**Дата:** 2026-04-12 06:10 UTC
 
 | | строк |
 |--|------:|
 | bronze_normalized.region (ok) | 121147 |
 | bronze_normalized.region_error | 3041 |
-| bronze_normalized.year (ok) | 150256 |
+| bronze_normalized.year (ok) | 150826 |
 | bronze_normalized.year_error | 0 |
 
 ---
@@ -111,14 +111,14 @@
 
 ## Блок 2 — Покрытие по годам
 
-**Всего строк с распознанным годом:** 150256
-- year_type=period: 150256
+**Всего строк с распознанным годом:** 150826
+- year_type=period: 150826
 - year_type=exact_date: 0
 
 | год | строк |
 |----:|------:|
-| 2018 | 15343 |
-| 2019 | 14980 |
+| 2018 | 15628 |
+| 2019 | 15265 |
 | 2020 | 14978 |
 | 2021 | 26833 |
 | 2022 | 26679 |

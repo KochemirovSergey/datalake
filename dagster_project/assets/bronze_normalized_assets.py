@@ -31,9 +31,15 @@ def _get_catalog():
     )
 
 
+def _refresh_views(context: AssetExecutionContext) -> None:
+    from scripts.refresh_duckdb import run
+    run()
+    context.log.info("DuckDB views refreshed")
+
+
 @asset(
     group_name="bronze_normalized",
-    deps=["excel_bronze", "population_bronze", "regions_bronze"],
+    deps=["doshkolka_bronze", "naselenie_bronze", "regions_bronze"],
     description=(
         "Нормализует регион для всех источников (doshkolka, naselenie). "
         "Записывает результаты в bronze_normalized.region и bronze_normalized.region_error."
@@ -71,11 +77,12 @@ def normalized_region(context: AssetExecutionContext) -> None:
         "Region normalization: total=%d ok=%d error=%d coverage=%s",
         total, total_ok, total_err, coverage,
     )
+    _refresh_views(context)
 
 
 @asset(
     group_name="bronze_normalized",
-    deps=["excel_bronze", "population_bronze", "normalized_region"],
+    deps=["doshkolka_bronze", "naselenie_bronze", "normalized_region"],
     description=(
         "Нормализует год для всех источников (doshkolka, naselenie). "
         "Записывает результаты в bronze_normalized.year и bronze_normalized.year_error."
@@ -108,6 +115,7 @@ def normalized_year(context: AssetExecutionContext) -> None:
     context.log.info(
         "Year normalization: ok=%d error=%d", total_ok, total_err,
     )
+    _refresh_views(context)
 
 
 @asset(
@@ -129,3 +137,4 @@ def normalized_validation(context: AssetExecutionContext) -> None:
         "report_path": MetadataValue.path(report_path),
     })
     context.log.info("Validation report saved: %s", report_path)
+    _refresh_views(context)

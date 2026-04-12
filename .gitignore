@@ -6,4 +6,4 @@ dagster_project/dagster_project.egg-info/
 *.__pycache__
 *.pyc
 logs/
-.tmp_dagster_home_9lcmeh3r/
+.tmp_dagster_home_*

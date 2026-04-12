@@ -2,10 +2,10 @@
 Bronze → Silver: таблица дошкольников по регионам.
 
 Что делает:
-  - Читает bronze.excel_tables (сырые строки Excel)
-  - Определяет строки данных (после заголовка)
-  - Распознаёт колонки возрастов по году
-  - Нормализует название региона → region_code через bronze.region_lookup
+  - Читает bronze_normalized.region (source_id=doshkolka) — нормализованный регион
+  - Читает bronze_normalized.year  (source_id=doshkolka) — валидированный год
+  - Берёт пересечение по row_id → только строки, где оба признака распознаны
+  - Джойнит с bronze.excel_tables для получения числовых значений по колонкам
   - Unpivot: одна строка = регион × год × территория × возраст
   - Пишет в silver.doshkolka
 
@@ -18,7 +18,6 @@ Bronze → Silver: таблица дошкольников по регионам
   value           — число детей
 """
 
-import re
 import logging
 import os
 
@@ -31,9 +30,10 @@ log = logging.getLogger(__name__)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CATALOG_DIR = os.path.join(BASE_DIR, "catalog")
 
+SOURCE_ID = "doshkolka"
+
 # ── Конфигурация ───────────────────────────────────────────────────────────────
 
-# Маппинг: номер колонки → название age_group
 # 2018-2021: subtotal 0-2 на col_5, subtotal 3+ на col_11 → пропускаем
 COL_MAP_2018_2021 = {
     1: "total",
@@ -73,172 +73,74 @@ SHEET_TERRITORY = {
 }
 
 
-# ── Нормализация названий регионов ─────────────────────────────────────────────
-
-def _normalize_region_name(name: str) -> str:
-    """
-    Приводит название региона к виду для сравнения с region_lookup.
-    """
-    if not name:
-        return ""
-    s = name.strip()
-
-    # Латинская H → кириллическая Н (артефакт в 2018: "Hижегородская")
-    s = s.replace("H", "Н").replace("h", "н")
-
-    s = s.lower()
-
-    # "Город Санкт-Петербург город федерального значения" → "санкт-петербург"
-    s = re.sub(r"город федерального значения\s*", "", s)
-    s = re.sub(r"^город\s+", "", s)
-
-    # "г. Санкт-Петербург" / "г Санкт-Петербург" → убрать префикс г.
-    s = re.sub(r"^г\.\s*", "", s)
-    s = re.sub(r"^г\s+", "", s)
-
-    # Скобки: контент СОХРАНЯЕМ (Якутия нужна), только убираем скобки
-    # "(Якутия)" → " Якутия", "(кроме ...)" → тоже оставим, потом отфильтруем
-    s = re.sub(r"\(([^)]+)\)", r" \1", s)
-
-    # Тире → пробел (Кабардино-Балкарская, Северная Осетия-Алания, Ямало-Ненецкий)
-    s = s.replace("-", " ").replace("–", " ")
-
-    # "авт." → "автономный " (Чукотский авт.округ → авт.округ → автономный округ)
-    s = s.replace("авт.", "автономный ")
-
-    # Убрать двойные пробелы
-    s = re.sub(r"\s+", " ", s).strip()
-
-    return s
-
-
-def build_region_index(cat: SqlCatalog) -> dict[str, str]:
-    """
-    Возвращает словарь: нормализованное_название → region_code.
-    Включает и канонические имена, и алиасы.
-    """
-    df = cat.load_table("bronze.region_lookup").scan().to_pandas()
-    index: dict[str, str] = {}
-    for _, row in df.iterrows():
-        key = _normalize_region_name(row["name_variant"])
-        index[key] = row["region_code"]
-
-    # Дополнительные алиасы для вариантов без уточнений в названии
-    extras = {
-        # "Ханты-Мансийский автономный округ" (без «Югра») = тот же регион
-        "ханты мансийский автономный округ": "RU-KHM",
-    }
-    for key, code in extras.items():
-        if key not in index:
-            index[key] = code
-
-    return index
-
-
-def lookup_region(name: str, index: dict[str, str]) -> str | None:
-    """
-    Ищет region_code по названию. Если точного совпадения нет —
-    пробует последовательно убирать последнее слово (до 4 попыток).
-    Это покрывает случаи типа:
-      "кемеровская область кузбасс"        → "кемеровская область"
-      "чувашская республика чувашия"       → "чувашская республика"
-      "ханты мансийский ... тюменская обл" → "ханты мансийский ... югра"
-    """
-    key = _normalize_region_name(name)
-    if key in index:
-        return index[key]
-
-    # Убираем по одному слову с конца
-    parts = key.split()
-    for trim in range(1, min(4, len(parts))):
-        shorter = " ".join(parts[: len(parts) - trim])
-        if shorter in index:
-            return index[shorter]
-
-    return None
-
-
-# ── Определение начала данных ──────────────────────────────────────────────────
-
-def is_numbering_row(row: pd.Series) -> bool:
-    """True если это строка-нумератор колонок (A/1/2/3... или 1.0/2.0/3.0...)."""
-    c0 = str(row.get("col_0", "") or "").strip()
-    c1 = str(row.get("col_1", "") or "").strip()
-    if c0 == "A" and c1 in ("1", "1.0"):
-        return True
-    try:
-        if float(c0) == 1.0 and float(c1) == 2.0:
-            return True
-    except (ValueError, TypeError):
-        pass
-    return False
-
-
-def find_data_start(sheet_df: pd.DataFrame) -> int:
-    """Возвращает row_num первой строки данных (после нумератора)."""
-    sorted_df = sheet_df.sort_values("row_num")
-    for _, row in sorted_df.iterrows():
-        if is_numbering_row(row):
-            return int(row["row_num"]) + 1
-    return 0
-
-
 # ── Основная трансформация ─────────────────────────────────────────────────────
 
 def transform(cat: SqlCatalog) -> list[dict]:
-    log.info("Loading bronze data...")
-    bronze = cat.load_table("bronze.excel_tables").scan().to_pandas()
+    # Нормализованные регионы для doshkolka
+    log.info("Загружаем bronze_normalized.region...")
+    norm_region = cat.load_table("bronze_normalized.region").scan().to_pandas()
+    norm_region = norm_region[norm_region["source_id"] == SOURCE_ID].copy()
+    log.info("bronze_normalized.region (doshkolka): %d строк", len(norm_region))
 
-    region_index = build_region_index(cat)
-    log.info("Region index: %d entries", len(region_index))
+    # Валидированные годы для doshkolka — берём только row_id
+    log.info("Загружаем bronze_normalized.year...")
+    norm_year = cat.load_table("bronze_normalized.year").scan().to_pandas()
+    norm_year = norm_year[norm_year["source_id"] == SOURCE_ID][["row_id"]].drop_duplicates()
+    log.info("bronze_normalized.year (doshkolka): %d строк", len(norm_year))
+
+    # Пересечение: только строки с валидным регионом И валидным годом
+    valid = norm_region.merge(norm_year, on="row_id", how="inner")
+    log.info("Строк с валидным регионом и годом: %d", len(valid))
+
+    if valid.empty:
+        log.warning("Нет валидных строк — bronze_normalized пуст или не запущен")
+        return []
+
+    # Сырые значения из bronze
+    log.info("Загружаем bronze.excel_tables...")
+    bronze = cat.load_table("bronze.excel_tables").scan().to_pandas()
+    bronze = bronze[bronze["source_file"].str.contains("Дошколка", na=False)].copy()
+    log.info("bronze.excel_tables (doshkolka): %d строк", len(bronze))
+
+    # JOIN: valid содержит source_file, sheet_name, row_num, year — уникальный ключ строки
+    merged = valid.merge(
+        bronze,
+        on=["source_file", "sheet_name", "row_num", "year"],
+        how="inner",
+    )
+    log.info("После JOIN с bronze: %d строк", len(merged))
 
     records = []
-    skipped_regions: set[str] = set()
-
-    for (year, sheet_name), group in bronze.groupby(["year", "sheet_name"]):
-        territory = SHEET_TERRITORY.get(str(sheet_name))
+    for _, row in merged.iterrows():
+        sheet_name = str(row["sheet_name"])
+        territory = SHEET_TERRITORY.get(sheet_name)
         if territory is None:
             log.warning("Unknown sheet '%s', skipping", sheet_name)
             continue
 
-        col_map = get_col_map(int(year))
-        data_start = find_data_start(group)
-        data_rows = group[group["row_num"] >= data_start].sort_values("row_num")
+        year = int(row["year"])
+        col_map = get_col_map(year)
 
-        for _, row in data_rows.iterrows():
-            region_raw = str(row.get("col_0") or "").strip()
-            if not region_raw or region_raw in ("nan", "None", ""):
-                continue
-
-            region_code = lookup_region(region_raw, region_index)
-            if region_code is None:
-                skipped_regions.add(region_raw)
-                continue
-
-            for col_idx, age_group in col_map.items():
-                raw_val = row.get(f"col_{col_idx}")
-                if raw_val is None or str(raw_val).strip() in ("nan", "None", "", "-"):
+        for col_idx, age_group in col_map.items():
+            raw_val = row.get(f"col_{col_idx}")
+            if raw_val is None or str(raw_val).strip() in ("nan", "None", "", "-"):
+                value = None
+            else:
+                try:
+                    value = int(float(str(raw_val).strip()))
+                except (ValueError, TypeError):
                     value = None
-                else:
-                    try:
-                        value = int(float(str(raw_val).strip()))
-                    except (ValueError, TypeError):
-                        value = None
 
-                records.append({
-                    "region_code":     region_code,
-                    "region_name_raw": region_raw,
-                    "year":            int(year),
-                    "territory_type":  territory,
-                    "age_group":       age_group,
-                    "value":           value,
-                })
+            records.append({
+                "region_code":     row["region_code"],
+                "region_name_raw": row["region_raw"],
+                "year":            year,
+                "territory_type":  territory,
+                "age_group":       age_group,
+                "value":           value,
+            })
 
-    if skipped_regions:
-        log.info("Regions not matched (%d):", len(skipped_regions))
-        for r in sorted(skipped_regions):
-            log.info("  SKIP: %s", r)
-
+    log.info("Сформировано %d записей", len(records))
     return records
 
 

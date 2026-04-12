@@ -26,6 +26,12 @@
   - Источник 1: `data/Дошколка/YYYY/` — дети в дошкольных учреждениях, 7 лет (2018–2024)
   - Источник 2: `data/Население/Бюллетень_YYYY.xlsx` — бюллетени о населении, 7 лет (2018–2024)
 - `bronze.region_lookup` — справочник регионов, 107 строк (89 канонических + 18 алиасов)
+- **PostgreSQL-источники** (загружаются через `ingestion/postgres_loader.py`):
+  - `bronze.oo_1_2_7_2_211` ← `public.oo_1_2_7_2_211`
+  - `bronze.oo_1_2_7_1_209` ← `public.oo_1_2_7_1_209`
+  - `bronze.спо_1_р2_101_43` ← `public.спо_1_р2_101_43`
+  - `bronze.впо_1_р2_13_54` ← `public.впо_1_р2_13_54`
+  - `bronze.пк_1_2_4_180` ← `public.пк_1_2_4_180`
 
 **Bronze Normalized** ← следующий этап (ТЗ: `docs/tz_bronze_normalized.md`):
 - `bronze_normalized.region` — нормализованный регион по каждой строке
@@ -43,6 +49,7 @@
 bronze:            excel_bronze            (data/Дошколка/ → bronze.excel_tables)
                    population_bronze       (data/Население/ → bronze.excel_tables)
                    regions_bronze          (data/regions.json → bronze.region_lookup)
+                   postgres_bronze         (PostgreSQL etl_db → bronze.oo_*/спо_*/впо_*/пк_*)
 
 bronze_normalized: normalized_region       (deps: excel_bronze, regions_bronze)     ← планируется
                    normalized_year         (deps: excel_bronze, normalized_region)   ← планируется
@@ -58,7 +65,8 @@ silver:            doshkolka_silver        (deps: excel_bronze, regions_bronze)
 - `scripts/reset.py` — очистка таблиц (интерактивное меню или CLI-аргумент)
 - `ingestion/setup_catalog.py` — инициализация каталога и схем (при пересоздании)
 - `ingestion/excel_loader.py` — загрузчик Excel (`flat=True` для файлов с годом в имени)
-- `ingestion/regions_loader.py` — загрузчик регионального справочника
+- `ingestion/json_loader.py` — загрузчик регионального справочника из JSON (бывший `regions_loader.py`)
+- `ingestion/postgres_loader.py` — загрузчик таблиц из PostgreSQL в Bronze (все значения → string)
 - `transformations/silver_doshkolka.py` — Bronze → Silver (дошкольники)
 - `transformations/silver_naselenie.py` — Bronze → Silver (население)
 
@@ -244,6 +252,11 @@ def silver_validation(context): ...
 - `data/Население/Бюллетень_YYYY.xlsx` — Excel, численность населения (2018–2024)
 - `data/regions.json` — справочник субъектов РФ с ISO-кодами и алиасами
 
+### Загружены из PostgreSQL (etl_db, localhost:5432)
+- `public.oo_1_2_7_2_211`, `public.oo_1_2_7_1_209` — первые два источника
+- `public.спо_1_р2_101_43`, `public.впо_1_р2_13_54`, `public.пк_1_2_4_180`
+- Соединение: `SRC_DB` в `ingestion/postgres_loader.py`
+
 ### Планируется
 - Реестр лицензий — CSV или база, проектируется отдельно
 - Другие источники — когда дойдём
@@ -267,7 +280,8 @@ def silver_validation(context): ...
   ├── ingestion/
   │   ├── setup_catalog.py
   │   ├── excel_loader.py
-  │   ├── regions_loader.py
+  │   ├── json_loader.py                ← загрузчик regions.json (бывший regions_loader.py)
+  │   ├── postgres_loader.py            ← загрузчик PostgreSQL → bronze
   │   └── normalization_config.yaml     ← конфиг bronze_normalized (создать)
   ├── transformations/
   │   ├── bronze_normalized/            ← создать в рамках ТЗ
