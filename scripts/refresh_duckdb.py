@@ -41,7 +41,8 @@ _TABLES = [
     ("silver",            "spo",           "silver_spo"),
     ("silver",            "vpo",           "silver_vpo"),
     ("silver",            "dpo",           "silver_dpo"),
-    ("silver",            "education_population_wide", "silver_education_population_wide"),
+    ("silver",            "education_population_wide",         "silver_education_population_wide"),
+    ("silver",            "education_population_wide_annual",  "silver_education_population_wide_annual"),
 ]
 
 _FILTERED_VIEWS = [

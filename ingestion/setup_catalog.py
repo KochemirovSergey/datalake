@@ -6,7 +6,7 @@
 import os
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.schema import Schema
-from pyiceberg.types import NestedField, StringType, TimestamptzType, IntegerType, LongType
+from pyiceberg.types import NestedField, StringType, TimestamptzType, IntegerType, LongType, DoubleType
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CATALOG_DIR = os.path.join(BASE_DIR, "catalog")
@@ -319,3 +319,30 @@ try:
     print("Created table: silver.education_population_wide")
 except Exception:
     print("Table already exists: silver.education_population_wide")
+
+annual_schema = Schema(
+    NestedField(1,  "region_code",      StringType(),  required=True),
+    NestedField(2,  "region_name_raw",  StringType(),  required=True),
+    NestedField(3,  "year",             IntegerType(), required=True),
+    NestedField(4,  "age",              StringType(),  required=True),
+    NestedField(5,  "population_total", LongType(),    required=False),
+    NestedField(6,  "level_1_1",        LongType(),    required=False),
+    NestedField(7,  "level_1_2",        LongType(),    required=False),
+    NestedField(8,  "level_1_3",        LongType(),    required=False),
+    NestedField(9,  "level_1_4",        LongType(),    required=False),
+    NestedField(10, "level_2_5_1",      LongType(),    required=False),
+    NestedField(11, "level_2_5_2",      LongType(),    required=False),
+    NestedField(12, "level_2_6",        LongType(),    required=False),
+    NestedField(13, "level_2_7",        LongType(),    required=False),
+    NestedField(14, "level_2_8",        LongType(),    required=False),
+    NestedField(15, "level_4_8b_1",     LongType(),    required=False),
+    NestedField(16, "level_4_8b_2",     LongType(),    required=False),
+    NestedField(17, "education_total",  LongType(),    required=False),
+    NestedField(18, "education_share",  DoubleType(),  required=False),
+)
+try:
+    catalog.create_table("silver.education_population_wide_annual", schema=annual_schema)
+    print("Created table: silver.education_population_wide_annual")
+except Exception:
+    print("Table already exists: silver.education_population_wide_annual")
+
