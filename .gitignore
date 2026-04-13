@@ -7,3 +7,5 @@ dagster_project/dagster_project.egg-info/
 *.pyc
 logs/
 .tmp_dagster_home_*
+reports/
+datalake.duckdb*

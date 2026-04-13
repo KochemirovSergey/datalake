@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CATALOG_DIR = os.path.join(BASE_DIR, "catalog")
 
-SOURCE_TABLES = ["oo_1_2_7_1_209", "oo_1_2_7_2_211"]
+SOURCE_IDS = ["oo_1_2_7_1_209", "oo_1_2_7_2_211"]
 
 # Возрастные значения из ОО (нормализованные)
 AGE_PATTERNS = [
@@ -99,34 +99,34 @@ def transform(cat: SqlCatalog) -> list[dict]:
             "1.4": "Среднее общее образование",
         }
 
-    for source_table in SOURCE_TABLES:
-        log.info("Обработка %s...", source_table)
+    for source_id in SOURCE_IDS:
+        log.info("Обработка %s...", source_id)
         
-        # Фильтруем измерения по source_table
-        src_regions = norm_region[norm_region["source_table"] == source_table].copy()
-        src_years = norm_year[norm_year["source_table"] == source_table].copy()
-        src_edu = norm_edu[norm_edu["source_table"] == source_table].copy()
+        # Фильтруем измерения по source_id
+        src_regions = norm_region[norm_region["source_id"] == source_id].copy()
+        src_years = norm_year[norm_year["source_id"] == source_id].copy()
+        src_edu = norm_edu[norm_edu["source_id"] == source_id].copy()
         
         if src_regions.empty:
-            log.warning("Нет нормализованных регионов для %s", source_table)
+            log.warning("Нет нормализованных регионов для %s", source_id)
             continue
 
         # Загружаем данные из bronze
         try:
-            bronze_tbl = cat.load_table(f"bronze.{source_table}")
+            bronze_tbl = cat.load_table(f"bronze.{source_id}")
             bronze_df = bronze_tbl.scan().to_pandas()
         except Exception as e:
-            log.warning("Не удалось загрузить bronze.%s: %s", source_table, e)
+            log.warning("Не удалось загрузить bronze.%s: %s", source_id, e)
             continue
 
         if bronze_df.empty:
-            log.warning("Таблица bronze.%s пуста", source_table)
+            log.warning("Таблица bronze.%s пуста", source_id)
             continue
 
         # JOIN с нормализованными измерениями
         # row_id в PostgreSQL-таблицах: "table_name||row_num"
         bronze_df["row_id"] = bronze_df.apply(
-            lambda r: f"{source_table}||{r['row_num']}", axis=1
+            lambda r: f"{source_id}||{r['row_num']}", axis=1
         )
 
         # Проверяем gate
@@ -152,7 +152,7 @@ def transform(cat: SqlCatalog) -> list[dict]:
             )
         else:
             # Если год не нормализован, пробуем извлечь из данных
-            log.warning("Год не нормализован для %s, пропускаем", source_table)
+            log.warning("Год не нормализован для %s, пропускаем", source_id)
             continue
 
         # JOIN education_level
@@ -163,14 +163,14 @@ def transform(cat: SqlCatalog) -> list[dict]:
                 how="inner"
             )
         else:
-            log.warning("Education level не нормализован для %s", source_table)
+            log.warning("Education level не нормализован для %s", source_id)
             continue
 
         # Фильтруем по gate если есть
         if gate_ok is not None:
             merged = merged[merged["row_id"].isin(gate_ok["row_id"])]
 
-        log.info("После JOIN: %d строк для %s", len(merged), source_table)
+        log.info("После JOIN: %d строк для %s", len(merged), source_id)
 
         # Обрабатываем строки
         for _, row in merged.iterrows():
@@ -180,7 +180,7 @@ def transform(cat: SqlCatalog) -> list[dict]:
                 continue
 
             # Получаем значение
-            value = _to_int(row.get("value"))
+            value = _to_int(row.get("значение"))
             if value is None:
                 value = _to_int(row.get("col_0"))  # fallback
 

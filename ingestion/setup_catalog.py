@@ -171,14 +171,15 @@ except Exception:
 
 edu_level_ok_schema = Schema(
     NestedField(1, "row_id",         StringType(), required=True),
-    NestedField(2, "source_table",   StringType(), required=True),
-    NestedField(3, "level_code",     StringType(), required=True),
-    NestedField(4, "level_label",    StringType(), required=True),
-    NestedField(5, "program_code",   StringType(), required=False),
-    NestedField(6, "program_label",  StringType(), required=False),
-    NestedField(7, "match_field",    StringType(), required=True),
-    NestedField(8, "match_value",    StringType(), required=True),
-    NestedField(9, "status",         StringType(), required=True),
+    NestedField(2, "source_id",      StringType(), required=True),
+    NestedField(3, "source_file",    StringType(), required=True),
+    NestedField(4, "level_code",     StringType(), required=True),
+    NestedField(5, "level_label",    StringType(), required=True),
+    NestedField(6, "program_code",   StringType(), required=False),
+    NestedField(7, "program_label",  StringType(), required=False),
+    NestedField(8, "match_field",    StringType(), required=True),
+    NestedField(9, "match_value",    StringType(), required=True),
+    NestedField(10, "status",        StringType(), required=True),
 )
 try:
     catalog.create_table("bronze_normalized.education_level", schema=edu_level_ok_schema)
@@ -188,11 +189,12 @@ except Exception:
 
 edu_level_err_schema = Schema(
     NestedField(1, "row_id",         StringType(), required=True),
-    NestedField(2, "source_table",   StringType(), required=True),
-    NestedField(3, "match_field",    StringType(), required=False),
-    NestedField(4, "match_value",    StringType(), required=False),
-    NestedField(5, "error_type",     StringType(), required=True),
-    NestedField(6, "error_details",  StringType(), required=False),
+    NestedField(2, "source_id",      StringType(), required=True),
+    NestedField(3, "source_file",    StringType(), required=True),
+    NestedField(4, "match_field",    StringType(), required=False),
+    NestedField(5, "match_value",    StringType(), required=False),
+    NestedField(6, "error_type",     StringType(), required=True),
+    NestedField(7, "error_details",  StringType(), required=False),
 )
 try:
     catalog.create_table("bronze_normalized.education_level_error", schema=edu_level_err_schema)
@@ -245,3 +247,51 @@ try:
     print("Created table: silver.naselenie")
 except Exception:
     print("Table already exists: silver.naselenie")
+
+# ── Новые Silver-таблицы (ТЗ: Образование) ────────────────────────────────────
+
+oo_schema = Schema(
+    NestedField(1, "region_code",     StringType(),  required=True),
+    NestedField(2, "region_name_raw", StringType(),  required=True),
+    NestedField(3, "year",            IntegerType(), required=True),
+    NestedField(4, "age",             StringType(),  required=True),
+    NestedField(5, "level_code",      StringType(),  required=True),
+    NestedField(6, "level_label",     StringType(),  required=True),
+    NestedField(7, "value",           LongType(),    required=False),
+)
+
+spo_schema = Schema(
+    NestedField(1, "region_code",     StringType(),  required=True),
+    NestedField(2, "region_name_raw", StringType(),  required=True),
+    NestedField(3, "year",            IntegerType(), required=True),
+    NestedField(4, "age",             StringType(),  required=True),
+    NestedField(5, "level_code",      StringType(),  required=True),
+    NestedField(6, "program_code",    StringType(),  required=False),
+    NestedField(7, "program_label",   StringType(),  required=False),
+    NestedField(8, "value",           LongType(),    required=False),
+)
+
+vpo_schema = oo_schema
+
+dpo_schema = Schema(
+    NestedField(1, "region_code",     StringType(),  required=True),
+    NestedField(2, "region_name_raw", StringType(),  required=True),
+    NestedField(3, "year",            IntegerType(), required=True),
+    NestedField(4, "age_band",        StringType(),  required=True),
+    NestedField(5, "level_code",      StringType(),  required=True),
+    NestedField(6, "program_code",    StringType(),  required=False),
+    NestedField(7, "program_label",   StringType(),  required=False),
+    NestedField(8, "value",           LongType(),    required=False),
+)
+
+for table_name, schema in [
+    ("silver.oo",  oo_schema),
+    ("silver.spo", spo_schema),
+    ("silver.vpo", vpo_schema),
+    ("silver.dpo", dpo_schema),
+]:
+    try:
+        catalog.create_table(table_name, schema=schema)
+        print(f"Created table: {table_name}")
+    except Exception:
+        print(f"Table already exists: {table_name}")

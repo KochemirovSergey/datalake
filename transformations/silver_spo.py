@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CATALOG_DIR = os.path.join(BASE_DIR, "catalog")
 
-SOURCE_TABLE = "спо_1_р2_101_43"
+SOURCE_ID = "спо_1_р2_101_43"
 LEVEL_CODE = "2.5"
 
 # Возрастные значения для СПО
@@ -87,30 +87,30 @@ def transform(cat: SqlCatalog) -> list[dict]:
     norm_year = cat.load_table("bronze_normalized.year").scan().to_pandas()
     norm_edu = cat.load_table("bronze_normalized.education_level").scan().to_pandas()
 
-    # Фильтруем по source_table
-    src_regions = norm_region[norm_region["source_table"] == SOURCE_TABLE].copy()
-    src_years = norm_year[norm_year["source_table"] == SOURCE_TABLE].copy()
-    src_edu = norm_edu[norm_edu["source_table"] == SOURCE_TABLE].copy()
+    # Фильтруем по source_id
+    src_regions = norm_region[norm_region["source_id"] == SOURCE_ID].copy()
+    src_years = norm_year[norm_year["source_id"] == SOURCE_ID].copy()
+    src_edu = norm_edu[norm_edu["source_id"] == SOURCE_ID].copy()
 
     if src_regions.empty:
-        log.warning("Нет нормализованных регионов для %s", SOURCE_TABLE)
+        log.warning("Нет нормализованных регионов для %s", SOURCE_ID)
         return []
 
     # Загружаем данные из bronze
     try:
-        bronze_tbl = cat.load_table(f"bronze.{SOURCE_TABLE}")
+        bronze_tbl = cat.load_table(f"bronze.{SOURCE_ID}")
         bronze_df = bronze_tbl.scan().to_pandas()
     except Exception as e:
-        log.error("Не удалось загрузить bronze.%s: %s", SOURCE_TABLE, e)
+        log.error("Не удалось загрузить bronze.%s: %s", SOURCE_ID, e)
         return []
 
     if bronze_df.empty:
-        log.warning("Таблица bronze.%s пуста", SOURCE_TABLE)
+        log.warning("Таблица bronze.%s пуста", SOURCE_ID)
         return []
 
     # JOIN с нормализованными измерениями
     bronze_df["row_id"] = bronze_df.apply(
-        lambda r: f"{SOURCE_TABLE}||{r['row_num']}", axis=1
+        lambda r: f"{SOURCE_ID}||{r['row_num']}", axis=1
     )
 
     # Проверяем gate
@@ -164,7 +164,9 @@ def transform(cat: SqlCatalog) -> list[dict]:
             continue
 
         # Получаем значение
-        value = _to_int(row.get("value"))
+        value = _to_int(row.get("значение"))
+        if value is None:
+            value = _to_int(row.get("col_0"))  # fallback
 
         program_code = str(row.get("program_code", ""))
         if not program_code:

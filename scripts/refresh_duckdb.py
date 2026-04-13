@@ -37,6 +37,10 @@ _TABLES = [
     ("bronze_normalized", "row_gate",                   "bronze_normalized_row_gate"),
     ("silver",            "doshkolka",     "silver_doshkolka"),
     ("silver",            "naselenie",     "silver_naselenie"),
+    ("silver",            "oo",            "silver_oo"),
+    ("silver",            "spo",           "silver_spo"),
+    ("silver",            "vpo",           "silver_vpo"),
+    ("silver",            "dpo",           "silver_dpo"),
 ]
 
 _FILTERED_VIEWS = [

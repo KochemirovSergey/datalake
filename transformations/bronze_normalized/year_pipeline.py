@@ -51,6 +51,10 @@ _ERR_SCHEMA = pa.schema([
 
 # ── Вспомогательные функции ────────────────────────────────────────────────────
 
+def _make_postgres_row_id(table_name: str, row_num: int) -> str:
+    return f"{table_name}||{row_num}"
+
+
 def _make_row_id(source_file: str, sheet_name: str, row_num: int) -> str:
     return f"{source_file}||{sheet_name}||{row_num}"
 
@@ -96,13 +100,11 @@ def run(cat: SqlCatalog, config_path: str = DEFAULT_CONFIG_PATH) -> dict:
     for src in sources:
         source_id = src["source_id"]
 
-        # PostgreSQL-источники не имеют year-конфига и source_filter — пропускаем
-        if "source_filter" not in src or "year" not in src:
-            log.info("[%s] Нет source_filter/year в конфиге, пропускаю", source_id)
+        # Пытаемся получить конфиг года
+        year_cfg = src.get("year")
+        if not year_cfg:
+            log.info("[%s] Нет конфига year, пропускаю", source_id)
             continue
-
-        source_filter = src["source_filter"]
-        year_cfg = src["year"]
         year_type = year_cfg["year_type"]
         location = year_cfg["location"]
 
@@ -111,30 +113,55 @@ def run(cat: SqlCatalog, config_path: str = DEFAULT_CONFIG_PATH) -> dict:
             stats[source_id] = {"skipped": True}
             continue
 
-        mask = bronze["source_file"].str.contains(source_filter, na=False)
-        src_df = bronze[mask].copy()
-        log.info("[%s] Строк в bronze: %d", source_id, len(src_df))
+        # Определяем источник данных
+        if src.get("table_type") == "postgres":
+            table_name = src["table_name"]
+            log.info("[%s] Загружаем bronze.%s...", source_id, table_name)
+            try:
+                src_df = cat.load_table(f"bronze.{table_name}").scan().to_pandas()
+            except Exception as e:
+                log.warning("[%s] Ошибка загрузки таблицы %s: %s", source_id, table_name, e)
+                continue
+        else:
+            if "source_filter" not in src:
+                log.info("[%s] Нет source_filter, пропускаю", source_id)
+                continue
+            source_filter = src["source_filter"]
+            mask = bronze["source_file"].str.contains(source_filter, na=False)
+            src_df = bronze[mask].copy()
+
+        log.info("[%s] Строк для обработки: %d", source_id, len(src_df))
 
         if src_df.empty:
-            log.warning("[%s] Нет данных в bronze. Пропускаю.", source_id)
+            log.warning("[%s] Нет данных. Пропускаю.", source_id)
             continue
 
         ok_records: list[dict] = []
         error_records: list[dict] = []
 
-        for _, row in src_df.iterrows():
-            row_id = _make_row_id(
-                str(row["source_file"]),
-                str(row["sheet_name"]),
-                int(row["row_num"]),
-            )
-            raw_year = row.get("year")
-            year_raw_str = str(raw_year) if raw_year is not None else ""
+        is_postgres = src.get("table_type") == "postgres"
 
-            year_int, error_type = normalize_year_from_field(raw_year, year_type)
+        for _, row in src_df.iterrows():
             row_num = int(row["row_num"])
-            source_file = str(row["source_file"])
-            sheet_name = str(row["sheet_name"])
+            if is_postgres:
+                row_id = _make_postgres_row_id(src["table_name"], row_num)
+                source_file = src["table_name"]
+                sheet_name = "postgres"
+                # В Postgres-таблицах год в колонке "год" (или что в конфиге)
+                row_column = year_cfg.get("row_column", "год")
+                raw_year = row.get(row_column)
+            else:
+                row_id = _make_row_id(
+                    str(row["source_file"]),
+                    str(row["sheet_name"]),
+                    row_num,
+                )
+                source_file = str(row["source_file"])
+                sheet_name = str(row["sheet_name"])
+                raw_year = row.get("year")
+
+            year_raw_str = str(raw_year) if raw_year is not None else ""
+            year_int, error_type = normalize_year_from_field(raw_year, year_type)
 
             if year_int is not None:
                 ok_records.append({

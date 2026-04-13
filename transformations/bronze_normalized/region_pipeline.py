@@ -58,6 +58,10 @@ _ERR_SCHEMA = pa.schema([
 
 # ── Вспомогательные функции ────────────────────────────────────────────────────
 
+def _make_postgres_row_id(table_name: str, row_num: int) -> str:
+    return f"{table_name}||{row_num}"
+
+
 def _make_row_id(source_file: str, sheet_name: str, row_num: int) -> str:
     return f"{source_file}||{sheet_name}||{row_num}"
 
@@ -169,6 +173,61 @@ def _run_row_pipeline(
                     "resolution_scope": "row",
                     "normalized_key":   normalized_key,
                 })
+
+    return ok_records, error_records
+
+
+def _run_postgres_row_pipeline(
+    df: pd.DataFrame,
+    source_id: str,
+    table_name: str,
+    row_column: str,
+    region_index: dict,
+) -> tuple[list[dict], list[dict]]:
+    ok_records: list[dict] = []
+    error_records: list[dict] = []
+
+    for _, row in df.iterrows():
+        region_raw = str(row.get(row_column) or "").strip()
+        if not region_raw or region_raw in ("nan", "None"):
+            continue
+
+        row_num = int(row["row_num"])
+        row_id = _make_postgres_row_id(table_name, row_num)
+        normalized_key = normalize_region_name(region_raw)
+        region_code = lookup_region(region_raw, region_index)
+
+        # Пытаемся получить год из колонки "год" или "year"
+        year_val = row.get("год") or row.get("year")
+        try:
+            year = int(float(year_val)) if year_val else 0
+        except:
+            year = 0
+
+        base = {
+            "row_id":      row_id,
+            "source_id":   source_id,
+            "source_file": table_name,
+            "sheet_name":  "postgres",
+            "year":        year,
+            "row_num":     row_num,
+            "region_raw":  region_raw,
+        }
+
+        if region_code and region_code != SKIP:
+            ok_records.append({
+                **base,
+                "region_code":      region_code,
+                "resolution_scope": "row",
+                "normalized_key":   normalized_key,
+            })
+        else:
+            error_records.append({
+                **base,
+                "error_type":       "aggregate_scope" if region_code == SKIP else "unmatched",
+                "resolution_scope": "row",
+                "normalized_key":   normalized_key,
+            })
 
     return ok_records, error_records
 
@@ -320,37 +379,53 @@ def run(cat: SqlCatalog, config_path: str = DEFAULT_CONFIG_PATH) -> dict:
     log.info("Всего строк в bronze: %d", len(bronze))
 
     stats: dict[str, dict] = {}
-
     for src in sources:
         source_id = src["source_id"]
-
-        # PostgreSQL-источники не имеют region-конфига и source_filter — пропускаем
-        if "source_filter" not in src or "region" not in src:
-            log.info("[%s] Нет source_filter/region в конфиге, пропускаю", source_id)
-            continue
-
-        source_filter = src["source_filter"]
-        region_cfg = src["region"]
-        location = region_cfg["location"]
 
         if _already_processed(cat, source_id):
             log.info("[%s] Уже обработан, пропускаю", source_id)
             stats[source_id] = {"skipped": True}
             continue
 
-        # Фильтруем строки по источнику
-        mask = bronze["source_file"].str.contains(source_filter, na=False)
-        src_df = bronze[mask].copy()
-        log.info("[%s] Строк в bronze: %d", source_id, len(src_df))
+        # Пытаемся получить конфиг региона
+        region_cfg = src.get("region")
+        if not region_cfg:
+            log.info("[%s] Нет конфига region, пропускаю", source_id)
+            continue
+        location = region_cfg["location"]
+
+        # Определяем источник данных
+        if src.get("table_type") == "postgres":
+            table_name = src["table_name"]
+            log.info("[%s] Загружаем bronze.%s...", source_id, table_name)
+            try:
+                src_df = cat.load_table(f"bronze.{table_name}").scan().to_pandas()
+            except Exception as e:
+                log.warning("[%s] Ошибка загрузки таблицы %s: %s", source_id, table_name, e)
+                continue
+        else:
+            if "source_filter" not in src:
+                log.info("[%s] Нет source_filter, пропускаю", source_id)
+                continue
+            source_filter = src["source_filter"]
+            mask = bronze["source_file"].str.contains(source_filter, na=False)
+            src_df = bronze[mask].copy()
+
+        log.info("[%s] Строк для обработки: %d", source_id, len(src_df))
 
         if src_df.empty:
-            log.warning("[%s] Нет данных в bronze. Пропускаю.", source_id)
+            log.warning("[%s] Нет данных. Пропускаю.", source_id)
             continue
 
         # Запускаем соответствующий пайплайн
         if location == "row":
             row_column = region_cfg["row_column"]
-            ok_records, error_records = _run_row_pipeline(src_df, source_id, row_column, region_index)
+            if src.get("table_type") == "postgres":
+                ok_records, error_records = _run_postgres_row_pipeline(
+                    src_df, source_id, src["table_name"], row_column, region_index
+                )
+            else:
+                ok_records, error_records = _run_row_pipeline(src_df, source_id, row_column, region_index)
         elif location == "meta_sheet":
             ok_records, error_records = _run_meta_sheet_pipeline(src_df, source_id, region_index, region_cfg)
         else:

@@ -48,7 +48,8 @@ MAPPING_CSV_PATH = os.path.join(BASE_DIR, "education_level_mapping.csv")
 
 _OK_SCHEMA = pa.schema([
     pa.field("row_id",           pa.string(), nullable=False),
-    pa.field("source_table",     pa.string(), nullable=False),
+    pa.field("source_id",        pa.string(), nullable=False),
+    pa.field("source_file",      pa.string(), nullable=False),
     pa.field("level_code",       pa.string(), nullable=False),
     pa.field("level_label",      pa.string(), nullable=False),
     pa.field("program_code",     pa.string(), nullable=True),
@@ -60,7 +61,8 @@ _OK_SCHEMA = pa.schema([
 
 _ERR_SCHEMA = pa.schema([
     pa.field("row_id",           pa.string(), nullable=False),
-    pa.field("source_table",     pa.string(), nullable=False),
+    pa.field("source_id",        pa.string(), nullable=False),
+    pa.field("source_file",      pa.string(), nullable=False),
     pa.field("match_field",      pa.string(), nullable=True),
     pa.field("match_value",      pa.string(), nullable=True),
     pa.field("error_type",       pa.string(), nullable=False),
@@ -74,10 +76,10 @@ def _already_processed(cat: SqlCatalog, source_table: str) -> bool:
     """True если bronze_normalized.education_level уже содержит данные для source_table."""
     try:
         tbl = cat.load_table("bronze_normalized.education_level")
-        arrow = tbl.scan(selected_fields=("source_table",)).to_arrow()
+        arrow = tbl.scan(selected_fields=("source_id",)).to_arrow()
         if len(arrow) == 0:
             return False
-        return source_table in arrow["source_table"].to_pylist()
+        return source_table in arrow["source_id"].to_pylist()
     except Exception:
         return False
 
@@ -101,12 +103,13 @@ def _load_mapping_csv(path: str = MAPPING_CSV_PATH) -> dict[tuple[str, str, str]
     return mapping
 
 
-def _make_ok(row_id: str, source_table: str, level_code: str, level_label: str,
+def _make_ok(row_id: str, source_id: str, source_file: str, level_code: str, level_label: str,
              program_code: str | None, program_label: str | None,
              match_field: str, match_value: str) -> dict:
     return {
         "row_id":        row_id,
-        "source_table":  source_table,
+        "source_id":     source_id,
+        "source_file":   source_file,
         "level_code":    level_code,
         "level_label":   level_label,
         "program_code":  program_code,
@@ -117,11 +120,12 @@ def _make_ok(row_id: str, source_table: str, level_code: str, level_label: str,
     }
 
 
-def _make_err(row_id: str, source_table: str, match_field: str | None,
+def _make_err(row_id: str, source_id: str, source_file: str, match_field: str | None,
               match_value: str | None, error_type: str, error_details: str | None = None) -> dict:
     return {
         "row_id":        row_id,
-        "source_table":  source_table,
+        "source_id":     source_id,
+        "source_file":   source_file,
         "match_field":   match_field,
         "match_value":   match_value,
         "error_type":    error_type,
@@ -190,7 +194,7 @@ def _run_source_pipeline(
                 continue
             row_id = make_row_id(str(source_file), str(sheet_name), int(row["row_num"]))
             ok_records.append(
-                _make_ok(row_id, source_id, resolved_code, label, None, None, "source", "")
+                _make_ok(row_id, source_id, str(source_file), resolved_code, label, None, None, "source", "")
             )
 
     return ok_records, []
@@ -239,7 +243,7 @@ def _run_lookup_postgres_pipeline(
         passes, filter_error = _check_filters(row_dict, filters)
         if not passes:
             err_records.append(
-                _make_err(row_id, table_name, match_field, None,
+                _make_err(row_id, source_id, table_name, match_field, None,
                           "filter_not_matched", filter_error)
             )
             continue
@@ -247,7 +251,7 @@ def _run_lookup_postgres_pipeline(
         # 3. Проверяем наличие match_field
         if match_field not in row_dict:
             err_records.append(
-                _make_err(row_id, table_name, match_field, None,
+                _make_err(row_id, source_id, table_name, match_field, None,
                           "match_field_missing", f"Column {match_field} not found in bronze table")
             )
             continue
@@ -256,7 +260,7 @@ def _run_lookup_postgres_pipeline(
         match_value = str(row_dict.get(match_field) or "").strip()
         if not match_value:
             err_records.append(
-                _make_err(row_id, table_name, match_field, match_value,
+                _make_err(row_id, source_id, table_name, match_field, match_value,
                           "match_value_empty", "Match field value is empty or null")
             )
             continue
@@ -265,7 +269,7 @@ def _run_lookup_postgres_pipeline(
         lookup_result = _lookup_education_level(table_name, match_field, match_value, mapping)
         if lookup_result is None:
             err_records.append(
-                _make_err(row_id, table_name, match_field, match_value,
+                _make_err(row_id, source_id, table_name, match_field, match_value,
                           "lookup_not_found",
                           f"No mapping found for {table_name}/{match_field}={match_value!r}")
             )
@@ -274,7 +278,7 @@ def _run_lookup_postgres_pipeline(
         # 6. Успех — записываем в ok
         ok_records.append(
             _make_ok(
-                row_id, table_name,
+                row_id, source_id, table_name,
                 lookup_result["level_code"],
                 lookup_result["level_label"],
                 lookup_result.get("program_code") or None,

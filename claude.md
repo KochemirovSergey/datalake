@@ -45,6 +45,10 @@
 **Silver — реализован, читает из bronze_normalized:**
 - `silver.doshkolka` — 15 993 строки: регион × год × территория × возрастная группа × значение
 - `silver.naselenie` — регион × год × возраст (0–79, 80+) × 9 числовых показателей (пол × тип территории)
+- `silver.oo` — регион × год × возраст × уровень образования (1.x)
+- `silver.spo` — регион × год × возраст × программа (2.5)
+- `silver.vpo` — регион × год × возраст × уровень образования (2.6+)
+- `silver.dpo` — регион × год × возрастная группа × программа (4.8)
 
 ### Скрипты
 
@@ -60,8 +64,13 @@
 - `ingestion/education_level_loader.py` — загрузчик справочника education_level_lookup.csv
 - `transformations/silver_doshkolka.py` — Bronze → Silver (дошкольники), читает из bronze_normalized
 - `transformations/silver_naselenie.py` — Bronze → Silver (население), читает из bronze_normalized
-- `validation/validate_silver.py` — генерирует Markdown-отчёт покрытия для Silver-слоя
+- `transformations/silver_oo.py` — Bronze → Silver (школы)
+- `transformations/silver_spo.py` — Bronze → Silver (СПО)
+- `transformations/silver_vpo.py` — Bronze → Silver (ВУЗы)
+- `transformations/silver_dpo.py` — Bronze → Silver (ДПО)
+- `validation/validate_silver.py` — генерирует Markdown-отчёт покрытия для Silver-слоя (doshkolka, naselenie)
 - `validation/validate_silver_doshkolka.py` — детальная матрица region × year для doshkolka
+- `validation/validate_silver_education.py` — отчёт покрытия для таблиц образования (silver_oo/spo/vpo/dpo)
 
 ### Схемы Silver-таблиц
 
@@ -251,6 +260,11 @@ regions_bronze    ──┘                                                     
                                                                           ▼
 postgres_bronze  (независимо)                              doshkolka_silver ──┐
                                                            naselenie_silver ──┴──► silver_validation
+                                                           
+                                                           oo_silver        ──┐
+                                                           spo_silver       ──┤
+                                                           vpo_silver       ──┼──► education_silver_validation
+                                                           dpo_silver       ──┘
 ```
 
 Каждый asset после записи данных вызывает `scripts/refresh_duckdb.py` —

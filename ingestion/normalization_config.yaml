@@ -43,6 +43,15 @@ sources:
     table_type: "postgres"
     table_name: "oo_1_2_7_1_209"
 
+    region:
+      location: "row"
+      row_column: "регион"
+
+    year:
+      location: "row"
+      year_type: "period"
+      row_column: "год"
+
     education_level:
       location: "column_name"
       match_field: "column_name"
@@ -52,6 +61,15 @@ sources:
     description: "ОО — форма 1-2.7/2 (211)"
     table_type: "postgres"
     table_name: "oo_1_2_7_2_211"
+
+    region:
+      location: "row"
+      row_column: "регион"
+
+    year:
+      location: "row"
+      year_type: "period"
+      row_column: "год"
 
     education_level:
       location: "column_name"
@@ -64,6 +82,15 @@ sources:
     description: "СПО — приём и выпуск по программам"
     table_type: "postgres"
     table_name: "спо_1_р2_101_43"
+
+    region:
+      location: "row"
+      row_column: "регион"
+
+    year:
+      location: "row"
+      year_type: "period"
+      row_column: "год"
 
     education_level:
       location: "column_metadata_2"
@@ -80,6 +107,15 @@ sources:
     table_type: "postgres"
     table_name: "впо_1_р2_13_54"
 
+    region:
+      location: "row"
+      row_column: "регион"
+
+    year:
+      location: "row"
+      year_type: "period"
+      row_column: "год"
+
     education_level:
       location: "column_metadata_1"
       match_field: "column_metadata_1"
@@ -91,6 +127,15 @@ sources:
     description: "ПК — повышение квалификации, форма 1-2.4"
     table_type: "postgres"
     table_name: "пк_1_2_4_180"
+
+    region:
+      location: "row"
+      row_column: "регион"
+
+    year:
+      location: "row"
+      year_type: "period"
+      row_column: "год"
 
     education_level:
       location: "row_name"

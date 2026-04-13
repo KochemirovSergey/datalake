@@ -65,13 +65,21 @@ def normalize_region_name(name: str) -> str:
 def build_region_index(cat: SqlCatalog) -> dict[str, str]:
     """
     Строит индекс нормализованное_название → region_code из bronze.region_lookup.
-    Включает и канонические имена, и все алиасы/варианты написания.
+    Включает:
+      1. Все name_variant (нормализованные)
+      2. Все region_code (в нижнем регистре)
     """
     df = cat.load_table("bronze.region_lookup").scan().to_pandas()
     index: dict[str, str] = {}
     for _, row in df.iterrows():
+        # Регистрация по названию
         key = normalize_region_name(row["name_variant"])
         index[key] = row["region_code"]
+
+        # Регистрация по ISO коду (RU-MOW -> ru mow)
+        code = row["region_code"]
+        if code and code != SKIP:
+            index[normalize_region_name(code)] = code
 
     return index
 
