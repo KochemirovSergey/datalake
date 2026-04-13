@@ -59,7 +59,7 @@ def _normalize_age_band(column_name: str) -> str | None:
     """Нормализует возрастную корзину из column_name."""
     if not column_name:
         return None
-    s = str(column_name).strip().lower()
+    s = str(column_name).strip().lower().replace("–", "-")
     
     for band in AGE_BANDS:
         if band.lower() in s:

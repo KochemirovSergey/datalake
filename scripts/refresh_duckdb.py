@@ -41,6 +41,7 @@ _TABLES = [
     ("silver",            "spo",           "silver_spo"),
     ("silver",            "vpo",           "silver_vpo"),
     ("silver",            "dpo",           "silver_dpo"),
+    ("silver",            "education_population_wide", "silver_education_population_wide"),
 ]
 
 _FILTERED_VIEWS = [

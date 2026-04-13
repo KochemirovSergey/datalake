@@ -29,19 +29,16 @@ CATALOG_DIR = os.path.join(BASE_DIR, "catalog")
 
 SOURCE_ID = "впо_1_р2_13_54"
 
-# Возрастные значения для ВПО
+# Возрастные значения для ВПО (обновленный список из bronze)
 AGE_PATTERNS = [
     "всего",
-    "18 лет и моложе",
-    "19 лет",
-    "20 лет",
-    "21-24 лет",
-    "25-29 лет",
-    "30-34 лет",
-    "35 лет и старше",
-    "возраст неизвестен",
+    "моложе 15 лет",
+    "15 лет", "16 лет", "17 лет", "18 лет", "19 лет", "20 лет",
+    "21 лет", "22 лет", "23 лет", "24 лет", "25 лет", "26 лет",
+    "27 лет", "28 лет", "29 лет", "30-34 лет", "35-39 лет",
+    "40 лет и старше",
+    "возраст неизвестен"
 ]
-
 
 def _to_int(val) -> int | None:
     """Преобразует строковое значение в int или None."""
@@ -55,14 +52,17 @@ def _to_int(val) -> int | None:
     except (ValueError, TypeError):
         return None
 
-
 def _normalize_age(row_name: str) -> str | None:
     """Нормализует возраст из row_name."""
     if not row_name:
         return None
     s = str(row_name).strip().lower()
     
-    for age in AGE_PATTERNS:
+    # Сначала проверяем точное совпадение с "всего" чтобы избежать случайных матчей
+    if s == "всего":
+        return "всего"
+        
+    for age in sorted(AGE_PATTERNS, key=len, reverse=True):
         if age.lower() in s:
             return age
     return None

@@ -199,3 +199,26 @@ def education_silver_validation(context: AssetExecutionContext) -> None:
     })
     context.log.info("Education silver validation report saved: %s", report_path)
     _refresh_views(context)
+
+@asset(
+    group_name="silver",
+    deps=["oo_silver", "spo_silver", "vpo_silver", "dpo_silver", "doshkolka_silver", "naselenie_silver"],
+    description="Сборная таблица silver.education_population_wide из всех источников.",
+)
+def education_population_wide_silver(context: AssetExecutionContext) -> None:
+    from transformations.silver_education_population_wide import run
+    from validation.validate_silver_education_population_wide import run as run_validation
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    count = run()
+    
+    cat = _get_catalog()
+    report_path = run_validation(cat)
+
+    context.add_output_metadata({
+        "total_rows": MetadataValue.int(count),
+        "report_path": MetadataValue.path(report_path),
+    })
+    context.log.info("Silver education_population_wide: %d rows written", count)
+    context.log.info("Validation report saved to: %s", report_path)
+    _refresh_views(context)

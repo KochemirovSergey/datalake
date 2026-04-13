@@ -86,7 +86,7 @@ def run(target: str) -> None:
 
     if target == "all":
         to_drop = tables
-    elif target in ("bronze", "silver", "gold"):
+    elif target in set(ns for ns, _ in tables):
         to_drop = [(ns, name) for ns, name in tables if ns == target]
     elif "." in target:
         ns, name = target.split(".", 1)
