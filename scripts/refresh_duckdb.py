@@ -133,6 +133,65 @@ def run() -> None:
             except Exception as e:
                 log.warning("%s: ошибка — %s", view_name, e)
 
+        # Аналитические вьюхи: анализ охвата образованием
+        try:
+            con.execute("DROP VIEW IF EXISTS coverage_wide")
+            con.execute("DROP VIEW IF EXISTS coverage_tidy")
+
+            # Длинный формат: регион × возраст → охват, отклонение, лет данных
+            con.execute("""
+                CREATE VIEW coverage_tidy AS
+                SELECT
+                    COALESCE(r.canonical_name, w.region_code) AS регион,
+                    w.region_code AS код,
+                    w.age AS возраст,
+                    nat.national_share_pct,
+                    AVG(CASE WHEN w.population_total > 0 AND w.education_total IS NOT NULL
+                             THEN (w.education_total / w.population_total) * 100
+                             ELSE NULL END) AS рег_охват_pct,
+                    AVG(CASE WHEN w.population_total > 0 AND w.education_total IS NOT NULL
+                             THEN (w.education_total / w.population_total) * 100
+                             ELSE NULL END) -
+                    nat.national_share_pct AS отклонение_пп,
+                    COUNT(DISTINCT w.year) AS лет_данных
+                FROM silver_education_population_wide_annual w
+                LEFT JOIN bronze_region_lookup r
+                    ON r.region_code = w.region_code AND r.is_alias = false
+                JOIN (
+                    SELECT age,
+                           SUM(education_total) / SUM(population_total) * 100 AS national_share_pct
+                    FROM silver_education_population_wide_annual
+                    WHERE population_total > 0 AND education_total IS NOT NULL
+                    GROUP BY age
+                ) nat ON nat.age = w.age
+                WHERE w.population_total > 0 AND w.education_total IS NOT NULL
+                GROUP BY w.region_code, r.canonical_name, w.age, nat.national_share_pct
+                ORDER BY w.region_code, w.age
+            """)
+            log.debug("coverage_tidy: создана")
+
+            # Пивот: получи список возрастов и создай PIVOT с явным IN (...)
+            ages_result = con.execute(
+                "SELECT DISTINCT age FROM silver_education_population_wide_annual "
+                "WHERE age IS NOT NULL ORDER BY age"
+            ).fetchall()
+            if ages_result:
+                ages_list = ", ".join(str(int(row[0])) for row in ages_result)
+                pivot_query = f"""
+                    CREATE VIEW coverage_wide AS
+                    PIVOT coverage_tidy
+                    ON возраст IN ({ages_list})
+                    USING FIRST(рег_охват_pct)
+                    GROUP BY регион, код
+                """
+                con.execute(pivot_query)
+                log.debug("coverage_wide: создана с %d возрастов", len(ages_result))
+            else:
+                log.warning("coverage_wide: нет данных для пивота")
+
+        except Exception as e:
+            log.warning("coverage_*: ошибка — %s", e)
+
     finally:
         con.close()
 
