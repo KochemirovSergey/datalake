@@ -308,8 +308,8 @@ def _section_education_totals_by_year(cat: SqlCatalog) -> str:
         lines.append("")
         return "\n".join(lines)
 
-    # Исключаем строки-агрегаты 'всего'
-    wide = wide[wide["age"].str.lower() != "всего"].copy()
+    # Исключаем федеральный агрегат (RU-FED) и строки-агрегаты по возрасту ('всего')
+    wide = wide[(wide["region_code"] != "RU-FED") & (wide["age"].str.lower() != "всего")].copy()
 
     # Привести числовые столбцы
     for col in EDUCATION_LEVEL_COLS:

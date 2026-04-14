@@ -165,8 +165,13 @@ def load_long_format(cat: SqlCatalog) -> pd.DataFrame:
         
     if not dfs:
         return pd.DataFrame()
-        
+
     lon_df = pd.concat(dfs, ignore_index=True)
+
+    # Исключаем федеральный агрегат «Российская Федерация» (RU-FED):
+    # эта строка дублирует сумму всех региональных строк и искажает агрегаты.
+    lon_df = lon_df[lon_df["region_code"] != "RU-FED"].copy()
+
     return lon_df
 
 def transform(cat: SqlCatalog) -> list[dict]:
