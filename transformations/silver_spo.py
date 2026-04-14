@@ -224,15 +224,6 @@ def run() -> int:
         log.error("Таблица silver.spo не найдена: %s", e)
         return 0
 
-    # Идемпотентность
-    try:
-        existing = tbl.scan().to_arrow()
-        if len(existing) > 0:
-            log.info("silver.spo уже содержит %d строк, пропускаю", len(existing))
-            return 0
-    except Exception:
-        pass
-
     records = transform(cat)
     if not records:
         log.warning("Нет данных для записи")
@@ -262,6 +253,14 @@ def run() -> int:
         },
         schema=pa_schema,
     )
+
+    try:
+        existing = tbl.scan(selected_fields=("region_code",)).to_arrow()
+        if len(existing) > 0:
+            log.info("Удаляем %d старых строк из silver.spo", len(existing))
+            tbl.delete("region_code is not null")
+    except Exception as e:
+        log.warning("Не удалось удалить старые данные: %s", e)
 
     tbl.append(arrow_tbl)
     log.info("Записано %d строк в silver.spo", len(records))

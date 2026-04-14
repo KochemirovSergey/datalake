@@ -17,7 +17,7 @@ from pyiceberg.catalog.sql import SqlCatalog
 log = logging.getLogger(__name__)
 
 BASE_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CSV_PATH  = os.path.join(BASE_DIR, "education_level_lookup.csv")
+CSV_PATH  = os.path.join(BASE_DIR, "data", "education_level_lookup.csv")
 CATALOG_DIR = os.path.join(BASE_DIR, "catalog")
 
 _SCHEMA = pa.schema([

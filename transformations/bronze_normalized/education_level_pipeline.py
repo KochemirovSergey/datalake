@@ -42,7 +42,7 @@ from transformations.bronze_normalized.common import (
 log = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-MAPPING_CSV_PATH = os.path.join(BASE_DIR, "education_level_mapping.csv")
+MAPPING_CSV_PATH = os.path.join(BASE_DIR, "data", "education_level_mapping.csv")
 
 # ── Схемы PyArrow (обновлённые per ТЗ) ─────────────────────────────────────────
 

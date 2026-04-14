@@ -52,13 +52,17 @@ EDUCATION_LEVELS = [
 
 # Ограничения возраста на уровне метрики: (min_age включительно, max_age включительно)
 METRIC_BOUNDS: dict[str, tuple[int, int]] = {
-    "level_2_5_1":  (0,  70),   # СПО: программа 1
-    "level_2_5_2":  (0,  70),   # СПО: программа 2
-    "level_2_6":    (0,  70),   # ВПО: бакалавриат
-    "level_2_7":    (0,  70),   # ВПО: специалитет
-    "level_2_8":    (0,  70),   # ВПО: магистратура
-    "level_4_8b_1": (18, 70),   # ДПО (1-ПК): программа 1
-    "level_4_8b_2": (18, 70),   # ДПО (1-ПК): программа 2
+    "level_1_1": (0, 8),
+    "level_1_2": (5, 45),
+    "level_1_3": (5, 45),
+    "level_1_4": (10, 45),
+    "level_2_5_1":  (0,  50),   # СПО: программа 1
+    "level_2_5_2":  (0,  50),   # СПО: программа 2
+    "level_2_6":    (0,  55),   # ВПО: бакалавриат
+    "level_2_7":    (0,  55),   # ВПО: специалитет
+    "level_2_8":    (0,  55),   # ВПО: магистратура
+    "level_4_8b_1": (18, 50),   # ДПО (1-ПК): программа 1
+    "level_4_8b_2": (18, 50),   # ДПО (1-ПК): программа 2
 }
 DEFAULT_BOUNDS = (0, 80)
 
@@ -78,18 +82,27 @@ def parse_and_distribute_age(age_str: str, max_age: int = 80, min_age: int = 0) 
     """
     Возвращает список кортежей (year: int, weight: float) для заданных границ.
     Веса нормированы (сумма = 1.0).
+
+    Поддерживаемые форматы (регистр и пробелы нормализуются):
+      Точный возраст : '15', '15 лет', '21 год', '22 года'
+      Верхняя граница (не включительно): '<15', 'моложе 15', 'моложе 15 лет'
+      Верхняя граница (включительно)  : '14 лет и моложе', '14 и моложе'
+      Закрытый диапазон               : '30-34', '30-34 лет', '30-34 года', '30–34 лет'
+      Открытый верхний диапазон       : '40+', '40 лет+', '40 лет и старше',
+                                        '40 и старше', '65 и более'
     """
     age_str = str(age_str).strip().lower()
 
-    # Просто число
-    if age_str.isdigit():
-        age = int(age_str)
+    # Точный возраст: '15', '15 лет', '21 год', '22 года'
+    match_exact = re.match(r'^(\d+)\s*(?:лет|год|года)?$', age_str)
+    if match_exact:
+        age = int(match_exact.group(1))
         if min_age <= age <= max_age:
             return [(age, 1.0)]
         return []
 
-    # '<X' или 'моложе X'
-    match_lt = re.match(r'^(?:<|моложе\s*)(\d+)$', age_str)
+    # '<X', 'моложе X', 'моложе X лет' (верхняя граница не включительно)
+    match_lt = re.match(r'^(?:<|моложе\s*)(\d+)(?:\s*лет)?$', age_str)
     if match_lt:
         upper_bound = int(match_lt.group(1))  # не включительно
         N = upper_bound  # возраста 0..upper_bound-1
@@ -97,12 +110,22 @@ def parse_and_distribute_age(age_str: str, max_age: int = 80, min_age: int = 0) 
             return _clamp([(0, 1.0)], min_age, max_age)
         total_weight = N * (N + 1) / 2.0
         # убывающее от старшего к младшему: age=X-1 получает максимальный вес
-        # вес[i] = (i+1) / total → age=0 минимум, age=N-1 максимум
         raw = [(i, (i + 1) / total_weight) for i in range(N)]
         return _clamp(raw, min_age, max_age)
 
-    # 'X-Y' (закрытый диапазон)
-    match_range = re.match(r'^(\d+)-(\d+)$', age_str)
+    # 'X лет и моложе', 'X и моложе' (верхняя граница включительно)
+    match_le = re.match(r'^(\d+)\s*(?:лет\s+)?и\s+моложе$', age_str)
+    if match_le:
+        upper_bound = int(match_le.group(1)) + 1  # делаем не включительно
+        N = upper_bound  # возраста 0..upper_bound-1
+        if N <= 0:
+            return _clamp([(0, 1.0)], min_age, max_age)
+        total_weight = N * (N + 1) / 2.0
+        raw = [(i, (i + 1) / total_weight) for i in range(N)]
+        return _clamp(raw, min_age, max_age)
+
+    # 'X-Y', 'X–Y' (закрытый диапазон, с опциональным суффиксом 'лет'/'года')
+    match_range = re.match(r'^(\d+)[-–](\d+)\s*(?:лет|года)?$', age_str)
     if match_range:
         start_age = int(match_range.group(1))
         end_age = int(match_range.group(2))
@@ -112,8 +135,8 @@ def parse_and_distribute_age(age_str: str, max_age: int = 80, min_age: int = 0) 
         raw = [(y, 1.0 / N) for y in range(start_age, end_age + 1)]
         return _clamp(raw, min_age, max_age)
 
-    # 'X+', 'X лет+' (открытый верхний диапазон)
-    match_plus = re.match(r'^(\d+)(?:\s*лет)?\+$', age_str)
+    # 'X+', 'X лет+', 'X лет и старше', 'X и старше', 'X и более'
+    match_plus = re.match(r'^(\d+)\s*(?:лет\s*)?(?:\+|и\s+(?:старше|более))$', age_str)
     if match_plus:
         start_age = int(match_plus.group(1))
         if start_age >= max_age:

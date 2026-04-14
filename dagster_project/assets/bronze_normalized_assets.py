@@ -5,7 +5,6 @@ Dagster assets для слоя bronze_normalized.
   normalized_year       — нормализует год для всех источников
   normalized_education  — нормализует education_level для источников с конфигом
   normalized_row_gate   — gate: агрегирует три измерения, проставляет ready_for_silver
-  normalized_validation — генерирует Markdown-отчёт по всем трём измерениям + gate
 """
 
 import logging
@@ -41,9 +40,9 @@ def _refresh_views(context: AssetExecutionContext) -> None:
 
 @asset(
     group_name="bronze_normalized",
-    deps=["doshkolka_bronze", "naselenie_bronze"],
+    deps=["doshkolka_bronze", "naselenie_bronze", "postgres_bronze"],
     description=(
-        "Нормализует регион для всех источников (doshkolka, naselenie). "
+        "Нормализует регион для всех источников (doshkolka, naselenie, postgres OO/СПО/ВПО/ДПО). "
         "Читает справочник из bronze.region_lookup (загружается отдельно: regions_bronze). "
         "Записывает результаты в bronze_normalized.region и bronze_normalized.region_error."
     ),
@@ -85,9 +84,9 @@ def normalized_region(context: AssetExecutionContext) -> None:
 
 @asset(
     group_name="bronze_normalized",
-    deps=["doshkolka_bronze", "naselenie_bronze"],
+    deps=["doshkolka_bronze", "naselenie_bronze", "postgres_bronze"],
     description=(
-        "Нормализует год для всех источников (doshkolka, naselenie). "
+        "Нормализует год для всех источников (doshkolka, naselenie, postgres OO/СПО/ВПО/ДПО). "
         "Записывает результаты в bronze_normalized.year и bronze_normalized.year_error."
     ),
 )
@@ -199,24 +198,3 @@ def normalized_row_gate(context: AssetExecutionContext) -> None:
     _refresh_views(context)
 
 
-@asset(
-    group_name="bronze_normalized",
-    deps=["normalized_row_gate"],
-    description=(
-        "Генерирует Markdown-отчёт о покрытии нормализации: "
-        "регионы × годы × education_level, gate coverage, error summary. "
-        "Сохраняет в reports/."
-    ),
-)
-def normalized_validation(context: AssetExecutionContext) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    from validation.validate_bronze_normalized import run
-
-    cat = _get_catalog()
-    report_path = run(cat)
-
-    context.add_output_metadata({
-        "report_path": MetadataValue.path(report_path),
-    })
-    context.log.info("Validation report saved: %s", report_path)
-    _refresh_views(context)

@@ -35,7 +35,7 @@ AGE_PATTERNS = [
     "моложе 15 лет",
     "15 лет", "16 лет", "17 лет", "18 лет", "19 лет", "20 лет",
     "21 лет", "22 лет", "23 лет", "24 лет", "25 лет", "26 лет",
-    "27 лет", "28 лет", "29 лет", "30-34 лет", "35-39 лет",
+    "27 лет", "28 лет", "29 лет", "30-34 года", "30-34 лет", "35-39 лет",
     "40 лет и старше",
     "возраст неизвестен"
 ]
@@ -205,15 +205,6 @@ def run() -> int:
         log.error("Таблица silver.vpo не найдена: %s", e)
         return 0
 
-    # Идемпотентность
-    try:
-        existing = tbl.scan().to_arrow()
-        if len(existing) > 0:
-            log.info("silver.vpo уже содержит %d строк, пропускаю", len(existing))
-            return 0
-    except Exception:
-        pass
-
     records = transform(cat)
     if not records:
         log.warning("Нет данных для записи")
@@ -241,6 +232,14 @@ def run() -> int:
         },
         schema=pa_schema,
     )
+
+    try:
+        existing = tbl.scan(selected_fields=("region_code",)).to_arrow()
+        if len(existing) > 0:
+            log.info("Удаляем %d старых строк из silver.vpo", len(existing))
+            tbl.delete("region_code is not null")
+    except Exception as e:
+        log.warning("Не удалось удалить старые данные: %s", e)
 
     tbl.append(arrow_tbl)
     log.info("Записано %d строк в silver.vpo", len(records))

@@ -1,7 +1,7 @@
 """
 Bronze → Silver: таблица общеобразовательных программ (ОО).
 
-Источники: bronze.oo_1_2_7_1_209 + bronze.oo_1_2_7_2_211
+Источники: bronze.oo_1_2_7_1_209_v2 + bronze.oo_1_2_7_2_211_v2
 Агрегация:
   - Государственные + Негосударственные (схлопываем через SUM)
   - Городские + Сельские (схлопываем через SUM)
@@ -25,7 +25,16 @@ log = logging.getLogger(__name__)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CATALOG_DIR = os.path.join(BASE_DIR, "catalog")
 
-SOURCE_IDS = ["oo_1_2_7_1_209", "oo_1_2_7_2_211"]
+SOURCE_IDS = [
+    "oo_1_2_7_1_209_v2",
+    "oo_1_2_7_2_211_v2",
+    "oo_1_2_14_2_1_151_v2",
+    "oo_1_2_14_2_2_152_v2",
+    "oo_1_2_14_2_3_153_v2",
+    "oo_1_2_14_1_1_147_v2",
+    "oo_1_2_14_1_2_148_v2",
+    "oo_1_2_14_1_3_149_v2",
+]
 
 # Возрастные значения из ОО (нормализованные)
 AGE_PATTERNS = [
@@ -230,15 +239,6 @@ def run() -> int:
         log.error("Таблица silver.oo не найдена: %s", e)
         return 0
 
-    # Идемпотентность
-    try:
-        existing = tbl.scan().to_arrow()
-        if len(existing) > 0:
-            log.info("silver.oo уже содержит %d строк, пропускаю", len(existing))
-            return 0
-    except Exception:
-        pass
-
     records = transform(cat)
     if not records:
         log.warning("Нет данных для записи")
@@ -266,6 +266,15 @@ def run() -> int:
         },
         schema=pa_schema,
     )
+
+    # Overwrite: удаляем старые данные перед записью
+    try:
+        existing = tbl.scan(selected_fields=("region_code",)).to_arrow()
+        if len(existing) > 0:
+            log.info("Удаляем %d старых строк из silver.oo", len(existing))
+            tbl.delete("region_code is not null")
+    except Exception as e:
+        log.warning("Не удалось удалить старые данные: %s", e)
 
     tbl.append(arrow_tbl)
     log.info("Записано %d строк в silver.oo", len(records))

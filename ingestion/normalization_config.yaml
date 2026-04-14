@@ -38,10 +38,10 @@ sources:
 
   # ── PostgreSQL-источники (ОО) ─────────────────────────────────────────────────
 
-  - source_id: "oo_1_2_7_1_209"
+  - source_id: "oo_1_2_7_1_209_v2"
     description: "ОО — форма 1-2.7/1 (209)"
     table_type: "postgres"
-    table_name: "oo_1_2_7_1_209"
+    table_name: "oo_1_2_7_1_209_v2"
 
     region:
       location: "row"
@@ -57,10 +57,124 @@ sources:
       match_field: "column_name"
       required: true
 
-  - source_id: "oo_1_2_7_2_211"
+  - source_id: "oo_1_2_7_2_211_v2"
     description: "ОО — форма 1-2.7/2 (211)"
     table_type: "postgres"
-    table_name: "oo_1_2_7_2_211"
+    table_name: "oo_1_2_7_2_211_v2"
+
+    region:
+      location: "row"
+      row_column: "регион"
+
+    year:
+      location: "row"
+      year_type: "period"
+      row_column: "год"
+
+    education_level:
+      location: "column_name"
+      match_field: "column_name"
+      required: true
+
+  - source_id: "oo_1_2_14_2_1_151_v2"
+    description: "ОО — форма 1-2.14/2.1 (151)"
+    table_type: "postgres"
+    table_name: "oo_1_2_14_2_1_151_v2"
+
+    region:
+      location: "row"
+      row_column: "регион"
+
+    year:
+      location: "row"
+      year_type: "period"
+      row_column: "год"
+
+    education_level:
+      location: "column_name"
+      match_field: "column_name"
+      required: true
+
+  - source_id: "oo_1_2_14_2_2_152_v2"
+    description: "ОО — форма 1-2.14/2.2 (152)"
+    table_type: "postgres"
+    table_name: "oo_1_2_14_2_2_152_v2"
+
+    region:
+      location: "row"
+      row_column: "регион"
+
+    year:
+      location: "row"
+      year_type: "period"
+      row_column: "год"
+
+    education_level:
+      location: "column_name"
+      match_field: "column_name"
+      required: true
+
+  - source_id: "oo_1_2_14_2_3_153_v2"
+    description: "ОО — форма 1-2.14/2.3 (153)"
+    table_type: "postgres"
+    table_name: "oo_1_2_14_2_3_153_v2"
+
+    region:
+      location: "row"
+      row_column: "регион"
+
+    year:
+      location: "row"
+      year_type: "period"
+      row_column: "год"
+
+    education_level:
+      location: "column_name"
+      match_field: "column_name"
+      required: true
+
+  - source_id: "oo_1_2_14_1_1_147_v2"
+    description: "ОО — форма 1-2.14/1.1 (147)"
+    table_type: "postgres"
+    table_name: "oo_1_2_14_1_1_147_v2"
+
+    region:
+      location: "row"
+      row_column: "регион"
+
+    year:
+      location: "row"
+      year_type: "period"
+      row_column: "год"
+
+    education_level:
+      location: "column_name"
+      match_field: "column_name"
+      required: true
+
+  - source_id: "oo_1_2_14_1_2_148_v2"
+    description: "ОО — форма 1-2.14/1.2 (148)"
+    table_type: "postgres"
+    table_name: "oo_1_2_14_1_2_148_v2"
+
+    region:
+      location: "row"
+      row_column: "регион"
+
+    year:
+      location: "row"
+      year_type: "period"
+      row_column: "год"
+
+    education_level:
+      location: "column_name"
+      match_field: "column_name"
+      required: true
+
+  - source_id: "oo_1_2_14_1_3_149_v2"
+    description: "ОО — форма 1-2.14/1.3 (149)"
+    table_type: "postgres"
+    table_name: "oo_1_2_14_1_3_149_v2"
 
     region:
       location: "row"

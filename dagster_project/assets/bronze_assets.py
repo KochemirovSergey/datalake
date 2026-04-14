@@ -117,7 +117,9 @@ def education_level_lookup_bronze(context: AssetExecutionContext) -> None:
     group_name="bronze_extraction",
     description=(
         "Загружает таблицы из PostgreSQL (etl_db) в Bronze слой Iceberg: "
-        "oo_1_2_7_2_211, oo_1_2_7_1_209, спо_1_р2_101_43, впо_1_р2_13_54, пк_1_2_4_180."
+        "oo_1_2_7_2_211_v2, oo_1_2_7_1_209_v2, "
+        "oo_1_2_14_2_1_151_v2, oo_1_2_14_2_2_152_v2, oo_1_2_14_2_3_153_v2, "
+        "спо_1_р2_101_43, впо_1_р2_13_54, пк_1_2_4_180."
     ),
 )
 def postgres_bronze(context: AssetExecutionContext) -> None:
