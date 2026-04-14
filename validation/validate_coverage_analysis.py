@@ -261,6 +261,87 @@ def _section_regional_matrix(
     return "\n".join(lines)
 
 
+# ── §4 Суммарные значения по уровням образования и годам ────────────────────
+
+# Человекочитаемые названия уровней образования
+LEVEL_LABELS: dict[str, str] = {
+    "level_1_1":   "Дошк. (1.1)",
+    "level_1_2":   "НОО (1.2)",
+    "level_1_3":   "ООО (1.3)",
+    "level_1_4":   "СОО (1.4)",
+    "level_2_5_1": "СПО осн. (2.5.1)",
+    "level_2_5_2": "СПО баз. (2.5.2)",
+    "level_2_6":   "ВПО бак. (2.6)",
+    "level_2_7":   "ВПО спец. (2.7)",
+    "level_2_8":   "ВПО маг. (2.8)",
+    "level_4_8b_1": "ДПО ПК (4.8b.1)",
+    "level_4_8b_2": "ДПО ПП (4.8b.2)",
+}
+
+EDUCATION_LEVEL_COLS = list(LEVEL_LABELS.keys())
+
+
+def _section_education_totals_by_year(cat: SqlCatalog) -> str:
+    """
+    §4: Суммарные значения по каждому уровню образования за каждый год.
+    Источник: silver.education_population_wide (оригинальные значения, без распределения по возрастам).
+    Все регионы, все возрастные группы кроме 'всего'.
+    """
+    lines = [
+        "## §4 — Суммарные значения по уровням образования и годам",
+        "",
+        "_Источник: `silver.education_population_wide`. "
+        "Агрегация: все регионы, все возрастные группы (исключая 'всего'). "
+        "Значения — исходные из Silver-таблиц (до распределения по отдельным годам возраста)._",
+        "",
+    ]
+
+    try:
+        wide = cat.load_table("silver.education_population_wide").scan().to_pandas()
+    except Exception as e:
+        lines.append(f"_Не удалось загрузить таблицу: {e}_")
+        lines.append("")
+        return "\n".join(lines)
+
+    if wide.empty:
+        lines.append("_Таблица пуста._")
+        lines.append("")
+        return "\n".join(lines)
+
+    # Исключаем строки-агрегаты 'всего'
+    wide = wide[wide["age"].str.lower() != "всего"].copy()
+
+    # Привести числовые столбцы
+    for col in EDUCATION_LEVEL_COLS:
+        if col in wide.columns:
+            wide[col] = pd.to_numeric(wide[col], errors="coerce")
+
+    years = sorted(wide["year"].unique().tolist())
+
+    # Заголовок таблицы
+    col_labels = [LEVEL_LABELS[c] for c in EDUCATION_LEVEL_COLS if c in wide.columns]
+    present_cols = [c for c in EDUCATION_LEVEL_COLS if c in wide.columns]
+
+    header = "| Год | " + " | ".join(col_labels) + " |"
+    sep = "|----:|" + "|".join("------------------:" for _ in present_cols) + "|"
+    lines.append(header)
+    lines.append(sep)
+
+    for year in years:
+        yr_df = wide[wide["year"] == year]
+        cells = []
+        for col in present_cols:
+            val = yr_df[col].sum(min_count=1)
+            if pd.isna(val):
+                cells.append("—")
+            else:
+                cells.append(f"{int(val):,}".replace(",", " "))
+        lines.append(f"| {year} | " + " | ".join(cells) + " |")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
 # ── Точка входа ──────────────────────────────────────────────────────────────
 
 def run(cat: SqlCatalog | None = None) -> str:
@@ -284,6 +365,9 @@ def run(cat: SqlCatalog | None = None) -> str:
 
     print("  Считаем региональный охват по возрасту…")
     regional = _regional_avg_coverage(df)
+
+    print("  Считаем суммарные значения по уровням образования и годам…")
+    section_edu_totals = _section_education_totals_by_year(cat)
 
     now = datetime.now(tz=timezone.utc)
     date_str = now.strftime("%Y-%m-%d")
@@ -319,6 +403,10 @@ def run(cat: SqlCatalog | None = None) -> str:
         "---",
         "",
         _section_regional_matrix(regional, code_to_name),
+        "",
+        "---",
+        "",
+        section_edu_totals,
     ]
 
     report_content = "\n".join(sections)
