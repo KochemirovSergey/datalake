@@ -18,6 +18,7 @@ PostgreSQL → Bronze loader.
 
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -25,6 +26,7 @@ import psycopg2
 import psycopg2.extras
 import pyarrow as pa
 from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
     IntegerType,
@@ -60,6 +62,13 @@ TABLES = [
     ("public", "спо_1_р2_101_43"),
     ("public", "впо_1_р2_13_54"),
     ("public", "пк_1_2_4_180"),
+    # Дашборды: дефицит кадров и общежития
+    ("public", "discipuli"),
+    ("public", "oo_1_3_4_230"),
+    ("public", "oo_1_3_1_218"),
+    ("public", "oo_1_3_2_221"),
+    ("public", "впо_2_р1_3_8"),
+    ("public", "впо_2_р1_4_10"),
 ]
 
 
@@ -194,7 +203,20 @@ def load_table(pg_schema: str, pg_table: str) -> int:
             for col in col_names
         }
         arrow_table = pa.table(arrays, schema=pa_schema)
-        tbl.append(arrow_table)
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                tbl.append(arrow_table)
+                break
+            except CommitFailedException:
+                if attempt == max_retries - 1:
+                    raise
+                wait = 2 ** attempt  # 1, 2, 4, 8 секунд
+                log.warning(
+                    "CommitFailedException при записи %s (попытка %d/%d), жду %ds",
+                    iceberg_name, attempt + 1, max_retries, wait,
+                )
+                time.sleep(wait)
 
         log.info(
             "Загружено %d строк: %s → %s",
@@ -208,10 +230,16 @@ def load_table(pg_schema: str, pg_table: str) -> int:
 
 # ── Точка входа ────────────────────────────────────────────────────────────────
 
-def run() -> dict[str, int]:
-    """Загружает все таблицы из TABLES. Возвращает dict: source_table → кол-во строк."""
+def run(tables: list | None = None) -> dict[str, int]:
+    """Загружает таблицы из TABLES. Возвращает dict: source_table → кол-во строк.
+
+    Args:
+        tables: если задан, загружает только таблицы с именами из этого списка (pg_table).
+                Если None — загружает все.
+    """
     results: dict[str, int] = {}
-    for pg_schema, pg_table in TABLES:
+    subset = [(s, t) for s, t in TABLES if tables is None or t in tables]
+    for pg_schema, pg_table in subset:
         count = load_table(pg_schema, pg_table)
         results[f"{pg_schema}.{pg_table}"] = count
     return results

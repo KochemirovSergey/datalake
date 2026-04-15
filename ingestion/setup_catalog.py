@@ -346,3 +346,61 @@ try:
 except Exception:
     print("Table already exists: silver.education_population_wide_annual")
 
+# ── Линия 1: Дефицит кадров ────────────────────────────────────────────────────
+
+staff_shortage_schema = Schema(
+    NestedField(1, "region_code",   StringType(),  required=True),
+    NestedField(2, "year",          IntegerType(), required=True),
+    NestedField(3, "level",         StringType(),  required=True),
+    NestedField(4, "student_count", IntegerType(), required=False),
+    NestedField(5, "trig1_val",     DoubleType(),  required=False),
+    NestedField(6, "trig2_val",     DoubleType(),  required=False),
+    NestedField(7, "bonus_score",   DoubleType(),  required=False),
+    NestedField(8, "score",         DoubleType(),  required=False),
+)
+try:
+    catalog.create_table("silver.staff_shortage_triggers", schema=staff_shortage_schema)
+    print("Created table: silver.staff_shortage_triggers")
+except Exception:
+    print("Table already exists: silver.staff_shortage_triggers")
+
+# ── Линия 2: Общежития ─────────────────────────────────────────────────────────
+
+from pyiceberg.types import BooleanType as _Bool
+
+dormitory_schema = Schema(
+    NestedField(1,  "region_code",          StringType(),  required=True),
+    NestedField(2,  "year",                 IntegerType(), required=True),
+    NestedField(3,  "is_forecast",          _Bool(),       required=True),
+    NestedField(4,  "area_total",           DoubleType(),  required=False),
+    NestedField(5,  "area_need_repair",     DoubleType(),  required=False),
+    NestedField(6,  "area_in_repair",       DoubleType(),  required=False),
+    NestedField(7,  "area_emergency",       DoubleType(),  required=False),
+    NestedField(8,  "dorm_need",            DoubleType(),  required=False),
+    NestedField(9,  "dorm_live",            DoubleType(),  required=False),
+    NestedField(10, "dorm_shortage_abs",    DoubleType(),  required=False),
+    NestedField(11, "metric_1",             DoubleType(),  required=False),
+    NestedField(12, "metric_2",             DoubleType(),  required=False),
+    NestedField(13, "metric_3",             DoubleType(),  required=False),
+    NestedField(14, "metric_4",             DoubleType(),  required=False),
+    NestedField(15, "metric_1_mean",        DoubleType(),  required=False),
+    NestedField(16, "metric_2_mean",        DoubleType(),  required=False),
+    NestedField(17, "metric_3_mean",        DoubleType(),  required=False),
+    NestedField(18, "metric_4_mean",        DoubleType(),  required=False),
+    NestedField(19, "metric_1_sigma",       DoubleType(),  required=False),
+    NestedField(20, "metric_2_sigma",       DoubleType(),  required=False),
+    NestedField(21, "metric_3_sigma",       DoubleType(),  required=False),
+    NestedField(22, "metric_4_sigma",       DoubleType(),  required=False),
+    NestedField(23, "metric_1_penalty",     DoubleType(),  required=False),
+    NestedField(24, "metric_2_penalty",     DoubleType(),  required=False),
+    NestedField(25, "metric_3_penalty",     DoubleType(),  required=False),
+    NestedField(26, "metric_4_penalty",     DoubleType(),  required=False),
+    NestedField(27, "sigma_sum",            DoubleType(),  required=False),
+    NestedField(28, "alert_flag",           IntegerType(), required=False),
+)
+try:
+    catalog.create_table("silver.dormitory_infrastructure", schema=dormitory_schema)
+    print("Created table: silver.dormitory_infrastructure")
+except Exception:
+    print("Table already exists: silver.dormitory_infrastructure")
+
