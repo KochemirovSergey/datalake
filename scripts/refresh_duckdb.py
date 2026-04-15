@@ -34,6 +34,14 @@ _TABLES = [
     ("bronze",            "впо_1_р2_13_54",  "bronze_впо_1_р2_13_54"),
     ("bronze",            "пк_1_2_4_180",    "bronze_пк_1_2_4_180"),
     ("bronze",            "education_level_lookup",    "bronze_education_level_lookup"),
+    # Дашборд: дефицит кадров
+    ("bronze",            "discipuli",       "bronze_discipuli"),
+    ("bronze",            "oo_1_3_4_230",    "bronze_oo_1_3_4_230"),
+    ("bronze",            "oo_1_3_1_218",    "bronze_oo_1_3_1_218"),
+    ("bronze",            "oo_1_3_2_221",    "bronze_oo_1_3_2_221"),
+    # Дашборд: общежития
+    ("bronze",            "впо_2_р1_3_8",    "bronze_впо_2_р1_3_8"),
+    ("bronze",            "впо_2_р1_4_10",   "bronze_впо_2_р1_4_10"),
     ("bronze_normalized", "region",                     "bronze_normalized_region"),
     ("bronze_normalized", "region_error",               "bronze_normalized_region_error"),
     ("bronze_normalized", "year",                       "bronze_normalized_year"),
@@ -49,6 +57,9 @@ _TABLES = [
     ("silver",            "dpo",           "silver_dpo"),
     ("silver",            "education_population_wide",         "silver_education_population_wide"),
     ("silver",            "education_population_wide_annual",  "silver_education_population_wide_annual"),
+    # Аналитические линии дашбордов
+    ("silver",            "staff_shortage_triggers",           "silver_staff_shortage_triggers"),
+    ("silver",            "dormitory_infrastructure",          "silver_dormitory_infrastructure"),
 ]
 
 _FILTERED_VIEWS = [
