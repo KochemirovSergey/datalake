@@ -184,7 +184,13 @@ def transform(cat: SqlCatalog) -> list[dict]:
     
     # 1. Normalize age
     df_long['age'] = df_long['age'].apply(normalize_age)
-    
+
+    # Исключаем строки-агрегаты по возрасту («всего»): они дублируют сумму
+    # детализированных строк и искажают любые агрегаты по таблице.
+    before = len(df_long)
+    df_long = df_long[df_long['age'] != 'всего'].copy()
+    log.info("Dropped %d 'всего' age rows (kept %d)", before - len(df_long), len(df_long))
+
     # 1.5. Normalize region_name_raw to avoid multiple rows for the same region_code
     # Select the first seen region_name_raw for each region_code
     reg_map = df_long.drop_duplicates('region_code').set_index('region_code')['region_name_raw']
