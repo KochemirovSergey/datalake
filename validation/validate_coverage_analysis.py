@@ -72,16 +72,18 @@ def _code_to_name(cat: SqlCatalog) -> dict[str, str]:
 
 def _prepare(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Фильтрует и приводит типы:
-      - age → int
-      - только строки с population_total > 0
+    Приводит типы без фильтрации строк — валидация должна отражать
+    полное содержимое таблицы.
+      - age → int (нечисловые значения → NaN, остаются в таблице)
     """
     df = df.copy()
     df["age"] = pd.to_numeric(df["age"], errors="coerce")
-    df = df.dropna(subset=["age"])
+    df["age"] = df["age"].where(df["age"].notna(), other=None)
+    # Оставляем только строки с числовым возрастом в отчётном диапазоне,
+    # потому что annual-таблица содержит исключительно целые возрасты 0–80.
+    # Это не фильтр данных, а приведение типа для последующей сортировки/группировки.
+    df = df[df["age"].notna()].copy()
     df["age"] = df["age"].astype(int)
-    df = df[(df["age"] >= MIN_REPORTING_AGE) & (df["age"] <= MAX_REPORTING_AGE)]
-    df = df[df["population_total"].notna() & (df["population_total"] > 0)]
     return df
 
 
@@ -90,19 +92,30 @@ def _prepare(df: pd.DataFrame) -> pd.DataFrame:
 def _national_coverage_by_age(df: pd.DataFrame) -> pd.DataFrame:
     """
     Взвешенный охват: SUM(education_total) / SUM(population_total) по возрасту.
-    Строки с NULL education_total исключаются из обоих агрегатов.
+    Для расчёта доли используются только строки, где оба значения не NULL и
+    population_total > 0 (деление на ноль невозможно). Строки с NULL в одном
+    из операндов всё равно отражаются через n_total_region_years.
     """
-    df_valid = df[df["education_total"].notna()].copy()
-
     agg = (
-        df_valid.groupby("age", as_index=False)
+        df.groupby("age", as_index=False)
+        .agg(
+            n_total_region_years=("region_code", "count"),
+        )
+    )
+
+    # Только строки, пригодные для расчёта отношения
+    df_ratio = df[df["education_total"].notna() & df["population_total"].notna() & (df["population_total"] > 0)].copy()
+    ratio_agg = (
+        df_ratio.groupby("age", as_index=False)
         .agg(
             sum_education=("education_total", "sum"),
             sum_population=("population_total", "sum"),
-            n_region_years=("region_code", "count"),
+            n_ratio_region_years=("region_code", "count"),
         )
     )
-    agg["national_share"] = agg["sum_education"] / agg["sum_population"]
+    ratio_agg["national_share"] = ratio_agg["sum_education"] / ratio_agg["sum_population"]
+
+    agg = agg.merge(ratio_agg, on="age", how="left")
     return agg.sort_values("age")
 
 
@@ -110,17 +123,20 @@ def _section_national(national: pd.DataFrame) -> str:
     lines = [
         "## §1 — Общероссийский охват образованием по возрасту",
         "",
-        "_Методология: взвешенная доля = Σ(обучающихся всех уровней по всем регионам и годам) / Σ(население по всем регионам и годам) для каждого возраста._",
+        "_Методология: взвешенная доля = Σ(обучающихся) / Σ(население) по всем регионам и годам для каждого возраста. "
+        "«Строк всего» — все строки таблицы для данного возраста; «в расчёте» — строки с ненулевым населением и непустым education\\_total._",
         "",
-        "| Возраст | Обучающихся всего | Население всего | Охват (%) | Регион×Год |",
-        "|--------:|------------------:|----------------:|----------:|-----------:|",
+        "| Возраст | Обучающихся | Население | Охват (%) | Строк всего | В расчёте |",
+        "|--------:|------------:|----------:|----------:|------------:|----------:|",
     ]
     for _, row in national.iterrows():
-        share_pct = f"{row['national_share'] * 100:.2f}%"
-        edu = f"{int(row['sum_education']):,}".replace(",", " ")
-        pop = f"{int(row['sum_population']):,}".replace(",", " ")
+        share_pct = f"{row['national_share'] * 100:.2f}%" if pd.notna(row.get("national_share")) else "—"
+        edu = f"{int(row['sum_education']):,}".replace(",", " ") if pd.notna(row.get("sum_education")) else "—"
+        pop = f"{int(row['sum_population']):,}".replace(",", " ") if pd.notna(row.get("sum_population")) else "—"
+        n_total = int(row["n_total_region_years"])
+        n_ratio = int(row["n_ratio_region_years"]) if pd.notna(row.get("n_ratio_region_years")) else 0
         lines.append(
-            f"| {int(row['age'])} | {edu} | {pop} | {share_pct} | {int(row['n_region_years'])} |"
+            f"| {int(row['age'])} | {edu} | {pop} | {share_pct} | {n_total} | {n_ratio} |"
         )
     lines.append("")
     return "\n".join(lines)
@@ -131,17 +147,17 @@ def _section_national(national: pd.DataFrame) -> str:
 def _regional_avg_coverage(df: pd.DataFrame) -> pd.DataFrame:
     """
     Средний education_share региона по всем годам для каждой комбинации (region_code, age).
-    Если education_share уже рассчитан — используем его,
-    иначе вычислим сами из столбцов.
+    share вычисляется только для строк, где population_total > 0 и education_total не NULL
+    (деление на ноль невозможно). Строки без этих данных не участвуют в среднем.
     """
-    df_valid = df[df["education_total"].notna()].copy()
+    df_ratio = df[
+        df["education_total"].notna() & df["population_total"].notna() & (df["population_total"] > 0)
+    ].copy()
 
-    # Рассчитываем share для каждой строки (region × year × age)
-    df_valid["row_share"] = df_valid["education_total"] / df_valid["population_total"]
+    df_ratio["row_share"] = df_ratio["education_total"] / df_ratio["population_total"]
 
-    # Среднее по годам для каждого (регион, возраст)
     regional = (
-        df_valid.groupby(["region_code", "age"], as_index=False)
+        df_ratio.groupby(["region_code", "age"], as_index=False)
         .agg(
             avg_share=("row_share", "mean"),
             n_years=("year", "nunique"),
@@ -225,7 +241,7 @@ def _section_regional_matrix(
     Широкая матрица: регион (строки) × возраст (столбцы) → средний охват (%).
     Выводим только возрасты, для которых есть хотя бы одно значение.
     """
-    ages = sorted(regional["age"].unique().tolist())
+    ages = sorted(regional["age"].unique().tolist(), key=lambda x: int(x) if str(x).isdigit() else float("inf"))
     region_codes = sorted(regional["region_code"].unique().tolist())
 
     # Pivot
@@ -291,7 +307,7 @@ def _section_education_totals_by_year(cat: SqlCatalog) -> str:
         "## §4 — Суммарные значения по уровням образования и годам",
         "",
         "_Источник: `silver.education_population_wide`. "
-        "Агрегация: все регионы, все возрастные группы (исключая 'всего'). "
+        "Агрегация: все строки таблицы без исключений. "
         "Значения — исходные из Silver-таблиц (до распределения по отдельным годам возраста)._",
         "",
     ]
@@ -307,9 +323,6 @@ def _section_education_totals_by_year(cat: SqlCatalog) -> str:
         lines.append("_Таблица пуста._")
         lines.append("")
         return "\n".join(lines)
-
-    # Исключаем федеральный агрегат (RU-FED) и строки-агрегаты по возрасту ('всего')
-    wide = wide[(wide["region_code"] != "RU-FED") & (wide["age"].str.lower() != "всего")].copy()
 
     # Привести числовые столбцы
     for col in EDUCATION_LEVEL_COLS:
@@ -358,7 +371,7 @@ def run(cat: SqlCatalog | None = None) -> str:
         return ""
 
     df = _prepare(raw)
-    print(f"  Строк после фильтрации: {len(df):,}")
+    print(f"  Строк в таблице: {len(raw):,} (с числовым возрастом для расчётов: {len(df):,})")
 
     print("  Считаем общероссийский охват по возрасту…")
     national = _national_coverage_by_age(df)
@@ -373,10 +386,11 @@ def run(cat: SqlCatalog | None = None) -> str:
     date_str = now.strftime("%Y-%m-%d")
     ts_str = now.strftime("%Y-%m-%d %H:%M UTC")
 
-    # Краткая статистика для шапки
-    years_in_data = sorted(df["year"].unique().tolist())
+    # Краткая статистика для шапки — по полному содержимому таблицы
+    years_in_data = sorted(raw["year"].unique().tolist())
     year_range = f"{years_in_data[0]}–{years_in_data[-1]}" if years_in_data else "нет данных"
-    n_regions = df["region_code"].nunique()
+    n_regions = raw["region_code"].nunique()
+    n_with_population = int((raw["population_total"].notna() & (raw["population_total"] > 0)).sum())
 
     sections = [
         "# Анализ охвата образованием по возрасту",
@@ -387,7 +401,8 @@ def run(cat: SqlCatalog | None = None) -> str:
         "",
         f"| Показатель | Значение |",
         f"|------------|----------|",
-        f"| Строк в таблице | {len(df):,} |",
+        f"| Строк в таблице (всего) | {len(raw):,} |",
+        f"| Строк с данными населения | {n_with_population:,} |",
         f"| Регионов | {n_regions} |",
         f"| Годы | {year_range} |",
         f"| Диапазон возрастов | {df['age'].min()}–{df['age'].max()} лет |",

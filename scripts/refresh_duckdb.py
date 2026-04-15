@@ -173,7 +173,7 @@ def run() -> None:
             # Пивот: получи список возрастов и создай PIVOT с явным IN (...)
             ages_result = con.execute(
                 "SELECT DISTINCT age FROM silver_education_population_wide_annual "
-                "WHERE age IS NOT NULL ORDER BY age"
+                "WHERE age IS NOT NULL ORDER BY TRY_CAST(age AS INTEGER)"
             ).fetchall()
             if ages_result:
                 ages_list = ", ".join(str(int(row[0])) for row in ages_result)
