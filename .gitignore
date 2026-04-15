@@ -1,3 +1,4 @@
+.env
 /.venv
 /data/reesrt_license
 /catalog
