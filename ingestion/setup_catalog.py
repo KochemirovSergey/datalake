@@ -404,3 +404,88 @@ try:
 except Exception:
     print("Table already exists: silver.dormitory_infrastructure")
 
+# ── Gold-слой (аналитические агрегаты) ─────────────────────────────────────────
+
+# Gold: gold.students — обучающиеся по возрастам
+gold_students_schema = Schema(
+    NestedField(1,  "region_code",     StringType(),  required=False),
+    NestedField(2,  "year",            IntegerType(), required=False),
+    NestedField(3,  "age",             IntegerType(), required=False),
+    NestedField(4,  "population_total", DoubleType(),  required=False),
+    NestedField(5,  "level_1_1",       DoubleType(),  required=False),
+    NestedField(6,  "level_1_2",       DoubleType(),  required=False),
+    NestedField(7,  "level_1_3",       DoubleType(),  required=False),
+    NestedField(8,  "level_1_4",       DoubleType(),  required=False),
+    NestedField(9,  "level_2_5_1",     DoubleType(),  required=False),
+    NestedField(10, "level_2_5_2",     DoubleType(),  required=False),
+    NestedField(11, "level_2_6",       DoubleType(),  required=False),
+    NestedField(12, "level_2_7",       DoubleType(),  required=False),
+    NestedField(13, "level_2_8",       DoubleType(),  required=False),
+    NestedField(14, "level_4_8b_1",    DoubleType(),  required=False),
+    NestedField(15, "level_4_8b_2",    DoubleType(),  required=False),
+    NestedField(16, "education_total", DoubleType(),  required=False),
+    NestedField(17, "education_share", DoubleType(),  required=False),
+)
+try:
+    catalog.create_table("gold.students", schema=gold_students_schema)
+    print("Created table: gold.students")
+except Exception:
+    print("Table already exists: gold.students")
+
+# Gold: gold.staff_load — педагогическая нагрузка
+gold_staff_load_schema = Schema(
+    NestedField(1,  "region_code",          StringType(),  required=False),
+    NestedField(2,  "year",                 IntegerType(), required=False),
+    NestedField(3,  "level",                StringType(),  required=False),
+    NestedField(4,  "student_count",        DoubleType(),  required=False),
+    NestedField(5,  "positions_total",      DoubleType(),  required=False),
+    NestedField(6,  "staff_headcount",      DoubleType(),  required=False),
+    NestedField(7,  "vacancies_unfilled",   DoubleType(),  required=False),
+    NestedField(8,  "staff_fte",            DoubleType(),  required=False),
+    NestedField(9,  "qual_higher_edu",      DoubleType(),  required=False),
+    NestedField(10, "qual_higher_cat",      DoubleType(),  required=False),
+    NestedField(11, "qual_first_cat",       DoubleType(),  required=False),
+    NestedField(12, "qual_ped_higher",      DoubleType(),  required=False),
+    NestedField(13, "qual_spe_mid",         DoubleType(),  required=False),
+    NestedField(14, "qual_ped_mid",         DoubleType(),  required=False),
+    NestedField(15, "qual_candidate",       DoubleType(),  required=False),
+    NestedField(16, "qual_doctor",          DoubleType(),  required=False),
+    NestedField(17, "exp_total",            DoubleType(),  required=False),
+    NestedField(18, "exp_none",             DoubleType(),  required=False),
+    NestedField(19, "exp_lt3",              DoubleType(),  required=False),
+    NestedField(20, "exp_3_5",              DoubleType(),  required=False),
+    NestedField(21, "exp_5_10",             DoubleType(),  required=False),
+    NestedField(22, "exp_10_15",            DoubleType(),  required=False),
+    NestedField(23, "exp_15_20",            DoubleType(),  required=False),
+    NestedField(24, "exp_gt20",             DoubleType(),  required=False),
+    NestedField(25, "load_ratio",           DoubleType(),  required=False),
+    NestedField(26, "vacancy_unfilled_share", DoubleType(), required=False),
+    NestedField(27, "avg_hours_per_teacher", DoubleType(), required=False),
+    NestedField(28, "shortage_score",       DoubleType(),  required=False),
+)
+try:
+    catalog.create_table("gold.staff_load", schema=gold_staff_load_schema)
+    print("Created table: gold.staff_load")
+except Exception:
+    print("Table already exists: gold.staff_load")
+
+# Gold: gold.dormitory — общежития
+gold_dormitory_schema = Schema(
+    NestedField(1,  "region_code",       StringType(),  required=False),
+    NestedField(2,  "year",              IntegerType(), required=False),
+    NestedField(3,  "area_total",        DoubleType(),  required=False),
+    NestedField(4,  "area_need_repair",  DoubleType(),  required=False),
+    NestedField(5,  "repair_share",      DoubleType(),  required=False),
+    NestedField(6,  "area_emergency",    DoubleType(),  required=False),
+    NestedField(7,  "dorm_shortage_abs", DoubleType(),  required=False),
+    NestedField(8,  "dorm_shortage_share", DoubleType(), required=False),
+    NestedField(9,  "dorm_need",         DoubleType(),  required=False),
+    NestedField(10, "dorm_live",         DoubleType(),  required=False),
+    NestedField(11, "is_forecast",       _Bool(),       required=False),
+    NestedField(12, "alert_flag",        IntegerType(), required=False),
+)
+try:
+    catalog.create_table("gold.dormitory", schema=gold_dormitory_schema)
+    print("Created table: gold.dormitory")
+except Exception:
+    print("Table already exists: gold.dormitory")

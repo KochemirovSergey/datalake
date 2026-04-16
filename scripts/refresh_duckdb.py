@@ -60,6 +60,10 @@ _TABLES = [
     # Аналитические линии дашбордов
     ("silver",            "staff_shortage_triggers",           "silver_staff_shortage_triggers"),
     ("silver",            "dormitory_infrastructure",          "silver_dormitory_infrastructure"),
+    # Gold-слой: аналитические агрегаты
+    ("gold",              "students",                          "gold_students"),
+    ("gold",              "staff_load",                        "gold_staff_load"),
+    ("gold",              "dormitory",                         "gold_dormitory"),
 ]
 
 _FILTERED_VIEWS = [

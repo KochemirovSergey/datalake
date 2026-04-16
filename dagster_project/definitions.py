@@ -6,6 +6,7 @@ from dagster_project.assets import (
     silver_assets,
     staff_shortage_assets,
     dormitory_assets,
+    gold_assets,
 )
 from dagster_project.resources import S3Config
 
@@ -15,6 +16,7 @@ all_assets = load_assets_from_modules([
     silver_assets,
     staff_shortage_assets,
     dormitory_assets,
+    gold_assets,
 ])
 
 defs = Definitions(
