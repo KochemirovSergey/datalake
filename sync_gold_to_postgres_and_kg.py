@@ -36,8 +36,8 @@ def main():
     )
     parser.add_argument(
         "--postgres-host",
-        default="localhost",
-        help="PostgreSQL хост (default: localhost)"
+        default="158.160.164.146",
+        help="PostgreSQL хост (default: 158.160.164.146)"
     )
     parser.add_argument(
         "--postgres-port",
@@ -47,13 +47,13 @@ def main():
     )
     parser.add_argument(
         "--postgres-user",
-        default="postgres",
-        help="PostgreSQL пользователь (default: postgres)"
+        default="kg_user",
+        help="PostgreSQL пользователь (default: kg_user)"
     )
     parser.add_argument(
         "--postgres-password",
-        default="postgres",
-        help="PostgreSQL пароль (default: postgres)"
+        default="kg_pass_2026",
+        help="PostgreSQL пароль (default: kg_pass_2026)"
     )
     parser.add_argument(
         "--postgres-db",
