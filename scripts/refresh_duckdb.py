@@ -84,6 +84,21 @@ _OBSOLETE_VIEWS = [
     "validation_naselenie",
 ]
 
+# Таблицы Слоя 1 (Medallion 2.0) — уже живут в DuckDB напрямую,
+# Iceberg им не нужен. Refresh не требуется, только проверка статуса.
+_LAYER1_TABLES = [
+    "bronze.1_obuch_doshkolka",
+    "bronze.1_naselenie",
+    "bronze.1_obuch_oo",
+    "bronze.1_obuch_vpo",
+    "bronze.1_obuch_spo",
+    "bronze.1_obuch_pk",
+    "bronze.1_obshagi_vpo",
+    "bronze.1_ped_oo",
+    "bronze.1_regions",
+    "bronze.1_code_programm",
+]
+
 
 def run() -> None:
     """
@@ -206,6 +221,26 @@ def run() -> None:
 
         except Exception as e:
             log.warning("coverage_*: ошибка — %s", e)
+
+        # Слой 1 (Medallion 2.0): таблицы уже в DuckDB, refresh не нужен — логируем статус
+        materialized, missing = [], []
+        for table in _LAYER1_TABLES:
+            schema, name = table.split(".", 1)
+            try:
+                count = con.execute(f'SELECT COUNT(*) FROM {schema}."{name}"').fetchone()[0]
+                materialized.append((table, count))
+                log.debug("%s: %d строк (DuckDB native)", table, count)
+            except Exception:
+                missing.append(table)
+                log.debug("%s: не материализована", table)
+
+        if materialized:
+            log.info(
+                "Слой 1 (DuckDB): %d таблиц материализовано, %d ожидают запуска",
+                len(materialized), len(missing),
+            )
+        if missing:
+            log.warning("Слой 1: не материализованы — %s", ", ".join(missing))
 
     finally:
         con.close()
