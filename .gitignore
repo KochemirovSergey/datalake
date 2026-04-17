@@ -10,7 +10,8 @@ logs/
 .tmp_dagster_home_*
 reports/
 datalake.duckdb*
-data/1-НД/.DS_Store
+data/1-НД/
+data/Дополнительное образование детей/
 data/.DS_Store
 coverage_tidy_202604151412.csv
 coverage_wide_202604151405.csv
