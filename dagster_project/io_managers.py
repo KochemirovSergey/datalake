@@ -12,6 +12,10 @@ SilverRawDuckDBIOManager    — сохраняет pd.DataFrame в схему si
 SilverRaw21DuckDBIOManager  — второй узел нормализации (возраст), схема silver_raw.
   handle_output: CREATE OR REPLACE TABLE silver_raw."2_1_<asset_name>"
   load_input:    SELECT * FROM silver_raw."2_1_<asset_name>"
+
+SilverAggDuckDBIOManager    — слой агрегации (Слой 3), схема silver_agg.
+  handle_output: CREATE OR REPLACE TABLE silver_agg."3_<asset_name>"
+  load_input:    SELECT * FROM silver_agg."3_<asset_name>"
 """
 
 import os
@@ -133,5 +137,47 @@ class SilverRaw21DuckDBIOManager(IOManager):
         conn = duckdb.connect(self._path, read_only=True)
         try:
             return conn.execute(f'SELECT * FROM silver_raw."2_1_{asset_name}"').df()
+        finally:
+            conn.close()
+
+
+class SilverAggDuckDBIOManager(IOManager):
+    """Слой агрегации (Слой 3): таблицы с префиксом 3_ в схеме silver_agg."""
+
+    def __init__(self, duckdb_path: str = DEFAULT_DUCKDB_PATH) -> None:
+        self._path = duckdb_path
+
+    def handle_output(self, context: OutputContext, obj: pd.DataFrame) -> None:
+        if obj is None:
+            context.log.warning("None вместо DataFrame для %s — запись пропущена", context.asset_key)
+            return
+
+        asset_name = context.asset_key.path[-1]
+        conn = duckdb.connect(self._path)
+        try:
+            conn.execute("CREATE SCHEMA IF NOT EXISTS silver_agg")
+            if isinstance(obj, pd.DataFrame) and not obj.empty:
+                conn.register("_payload", obj)
+                conn.execute(
+                    f'CREATE OR REPLACE TABLE silver_agg."3_{asset_name}" AS SELECT * FROM _payload'
+                )
+                context.log.info(
+                    "silver_agg.3_%s: записано %d строк, %d колонок",
+                    asset_name, len(obj), len(obj.columns),
+                )
+            else:
+                conn.execute(
+                    f'CREATE TABLE IF NOT EXISTS silver_agg."3_{asset_name}" '
+                    f'(region_code VARCHAR, year INTEGER, edu_level_code VARCHAR, age INTEGER)'
+                )
+                context.log.warning("silver_agg.3_%s: пустой DataFrame, таблица создана пустой", asset_name)
+        finally:
+            conn.close()
+
+    def load_input(self, context: InputContext) -> pd.DataFrame:
+        asset_name = context.asset_key.path[-1]
+        conn = duckdb.connect(self._path, read_only=True)
+        try:
+            return conn.execute(f'SELECT * FROM silver_agg."3_{asset_name}"').df()
         finally:
             conn.close()

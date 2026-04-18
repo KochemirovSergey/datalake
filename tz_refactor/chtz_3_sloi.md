@@ -13,11 +13,14 @@
 ## 4. Требования к реализации
 
 ### 4.1. Группировка
-Все таблицы на выходе этого слоя должны иметь единый первичный ключ (Granularity): `[region_id, year]`. Если нужны дополнительные срезы (например, `education_level`), ключ будет `[region_id, year, education_level]`.
+Ключ гранулярности зависит от наличия возраста на входе:
+- Источники **с возрастом** (`n_*_age`, подуровень 2.1): ключ `[region_code, year, age, edu_level_code]`.
+- Источники **без возраста** (прямой выход `n_*`): ключ `[region_code, year]` или `[region_code, year, edu_level_code]`.
 
 ### 4.2. Разворачивание (Unpivot)
-Логика из файла `transformations/silver_education_population_wide_annual.py` переносится сюда. 
-Широкие таблицы с колонками-возрастами или диапазонами должны быть преобразованы (через `pd.melt` или аналоги) в длинный формат.
+Логика из файла `transformations/silver_education_population_wide_annual.py` переносится сюда.
+Широкие таблицы должны быть преобразованы (через `pd.melt` или аналоги) в длинный формат.
+**Для источников с уже нормализованным возрастом (подуровень 2.1) unpivot не нужен** — данные уже в длинном формате.
 
 ### 4.3. Zero-filling (Критический багфикс)
 После выполнения `groupby` и создания сетки «Регион-Год» могут появиться пропуски (например, в 2021 году в регионе не было коммерческих студентов).
@@ -25,14 +28,20 @@
 
 ## 5. Требуемые ассеты (dagster_project/assets/3_aggregation_assets.py)
 Группа `3_aggregation`:
-- `a_doshkolka` (на вход `n_obuch_doshkolka`)
-- `a_naselenie` (на вход `n_naselenie`)
-- `a_obuch_oo` (на вход `n_obuch_oo`)
-- `a_obuch_vpo` (на вход `n_obuch_vpo`)
-- `a_obuch_spo` (на вход `n_obuch_spo`)
-- `a_obuch_pk` (на вход `n_obuch_pk`)
+
+**Входят от подуровня 2.1 (`n_*_age`)** — имеют числовой `age` в ключе:
+- `a_obuch_oo`  (на вход `n_obuch_oo_age`)
+- `a_obuch_vpo` (на вход `n_obuch_vpo_age`)
+- `a_obuch_spo` (на вход `n_obuch_spo_age`)
+- `a_obuch_pk`  (на вход `n_obuch_pk_age`)
+
+**Входят напрямую от базового уровня 2 (`n_*`)** — возраст отсутствует:
 - `a_obshagi_vpo` (на вход `n_obshagi_vpo`)
-- `a_obshagi_spo` (на вход `n_obshagi_spo`)
-- `a_ped_kadry` (на вход `n_ped_kadry`)
+- `a_obshagi_spo` (на вход `n_obshagi_spo`, заглушка)
+- `a_ped_kadry`   (на вход `n_ped_kadry`)
+
+**Исключены из слоя 3** (идут с 2.1 напрямую на слой 4):
+- ~~`a_doshkolka`~~ → `n_obuch_doshkolka_age` → слой 4 (`v_1_1`)
+- ~~`a_naselenie`~~ → `n_naselenie_age` → слой 4 (`v_naselenie_v_tselom`)
 
 **Конфигурация:** Настроить IO Manager на сохранение в схему `silver_agg`.

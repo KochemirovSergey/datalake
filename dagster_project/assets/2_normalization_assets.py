@@ -137,6 +137,16 @@ _OBSHAGI_VPO_SKIP_ROW_NAMES = frozenset({
     "из нее площадь по целям использования:     учебных полигонов",
 })
 
+# ped_kadry: маппинг row_name → edu_level_code
+# Строки "учителя-всего" охватывают все уровни ОО; строка НОО — только начальное
+_PED_KADRY_EDU_LEVEL_MAP: dict[str, str] = {
+    "в том числе:             учителя–всего (сумма строк 08-18, 22-27)":       "1.2;1.3;1.4",
+    "в том числе:             учителя – всего (сумма строк 08-18, 22-27)":     "1.2;1.3;1.4",
+    "в том числе:             учителя – всего (сумма строк 08-18, 23-29)":     "1.2;1.3;1.4",
+    "в том числе:             учителя–всего (сумма строк 08-18, 23-29)":       "1.2;1.3;1.4",
+    "в том числе:                   учителя, осуществляющие деятельность по реализации                   программ начального общего образования": "1.2",
+}
+
 # BUGFIXES_AUDIT: ped_kadry — строки-агрегаты по row_number, которые не должны попадать во 2-й слой
 _PED_KADRY_SKIP_ROW_NUMBERS = frozenset({
     "1", "2", "3", "4", "5", "6", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18",
@@ -627,6 +637,8 @@ def n_obshagi_vpo(
             context.log.info("[obshagi_vpo] Row Gate: удалено %d строк-агрегатов", dropped)
 
     df = _normalize_postgres_df(obshagi_vpo, context, "obshagi_vpo")
+    # Общежития ВПО обслуживают все уровни высшего образования (бакалавриат, специалитет, аспирантура)
+    df["edu_level_code"] = "2.6;2.7;2.9"
     context.add_output_metadata({
         "total_rows": MetadataValue.int(len(df)),
         "regions":    MetadataValue.int(df["region_code"].nunique() if not df.empty else 0),
@@ -941,6 +953,10 @@ def n_ped_kadry(
             context.log.info("[ped_kadry] Row Gate row_number: удалено %d строк-агрегатов", dropped)
 
     df = _normalize_postgres_df(ped_oo, context, "ped_kadry")
+    if "row_name" in df.columns:
+        df["edu_level_code"] = df["row_name"].map(_PED_KADRY_EDU_LEVEL_MAP)
+        matched = df["edu_level_code"].notna().sum()
+        context.log.info("[ped_kadry] edu_level_code проставлен для %d строк", matched)
     context.add_output_metadata({
         "total_rows": MetadataValue.int(len(df)),
         "regions":    MetadataValue.int(df["region_code"].nunique() if not df.empty else 0),
