@@ -11,18 +11,23 @@ from dagster_project.assets import (
     dormitory_assets,
     gold_assets,
 )
-from dagster_project.io_managers import BronzeDuckDBIOManager
+from dagster_project.io_managers import BronzeDuckDBIOManager, SilverRawDuckDBIOManager
 from dagster_project.resources import S3Config
 
-# Файл 1_extraction_assets.py нельзя импортировать стандартным способом
-# (имя начинается с цифры), поэтому используем importlib.
-_assets_dir = os.path.dirname(__file__)
-_spec = importlib.util.spec_from_file_location(
-    "layer1_extraction_assets",
-    os.path.join(_assets_dir, "assets", "1_extraction_assets.py"),
-)
-_layer1 = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_layer1)
+
+def _load_numbered_module(name: str, filename: str):
+    """Загружает модуль с именем файла, начинающимся с цифры (importlib)."""
+    assets_dir = os.path.dirname(__file__)
+    spec = importlib.util.spec_from_file_location(
+        name, os.path.join(assets_dir, "assets", filename)
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_layer1 = _load_numbered_module("layer1_extraction_assets", "1_extraction_assets.py")
+_layer2 = _load_numbered_module("layer2_normalization_assets", "2_normalization_assets.py")
 
 all_assets = load_assets_from_modules([
     bronze_assets,
@@ -32,12 +37,14 @@ all_assets = load_assets_from_modules([
     dormitory_assets,
     gold_assets,
     _layer1,
+    _layer2,
 ])
 
 defs = Definitions(
     assets=all_assets,
     resources={
-        "s3_config":          S3Config(),
-        "bronze_io_manager":  BronzeDuckDBIOManager(),
+        "s3_config":               S3Config(),
+        "bronze_io_manager":       BronzeDuckDBIOManager(),
+        "silver_raw_io_manager":   SilverRawDuckDBIOManager(),
     },
 )
