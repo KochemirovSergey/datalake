@@ -11,7 +11,7 @@ from dagster_project.assets import (
     dormitory_assets,
     gold_assets,
 )
-from dagster_project.io_managers import BronzeDuckDBIOManager, SilverRawDuckDBIOManager
+from dagster_project.io_managers import BronzeDuckDBIOManager, SilverRawDuckDBIOManager, SilverRaw21DuckDBIOManager
 from dagster_project.resources import S3Config
 
 
@@ -46,5 +46,6 @@ defs = Definitions(
         "s3_config":               S3Config(),
         "bronze_io_manager":       BronzeDuckDBIOManager(),
         "silver_raw_io_manager":   SilverRawDuckDBIOManager(),
+        "silver_raw_age_io_manager": SilverRaw21DuckDBIOManager(),
     },
 )

@@ -1,13 +1,17 @@
 """
 IO Managers для Medallion 2.0.
 
-BronzeDuckDBIOManager     — сохраняет pd.DataFrame в схему bronze DuckDB.
+BronzeDuckDBIOManager       — сохраняет pd.DataFrame в схему bronze DuckDB.
   handle_output: CREATE OR REPLACE TABLE bronze."1_<asset_name>"
   load_input:    SELECT * FROM bronze."1_<asset_name>"
 
-SilverRawDuckDBIOManager  — сохраняет pd.DataFrame в схему silver_raw DuckDB.
+SilverRawDuckDBIOManager    — сохраняет pd.DataFrame в схему silver_raw DuckDB.
   handle_output: CREATE OR REPLACE TABLE silver_raw."2_<asset_name>"
   load_input:    SELECT * FROM silver_raw."2_<asset_name>"
+
+SilverRaw21DuckDBIOManager  — второй узел нормализации (возраст), схема silver_raw.
+  handle_output: CREATE OR REPLACE TABLE silver_raw."2_1_<asset_name>"
+  load_input:    SELECT * FROM silver_raw."2_1_<asset_name>"
 """
 
 import os
@@ -87,5 +91,47 @@ class SilverRawDuckDBIOManager(IOManager):
         conn = duckdb.connect(self._path, read_only=True)
         try:
             return conn.execute(f'SELECT * FROM silver_raw."2_{asset_name}"').df()
+        finally:
+            conn.close()
+
+
+class SilverRaw21DuckDBIOManager(IOManager):
+    """Второй узел нормализации: таблицы с префиксом 2_1_ в схеме silver_raw."""
+
+    def __init__(self, duckdb_path: str = DEFAULT_DUCKDB_PATH) -> None:
+        self._path = duckdb_path
+
+    def handle_output(self, context: OutputContext, obj: pd.DataFrame) -> None:
+        if obj is None:
+            context.log.warning("None вместо DataFrame для %s — запись пропущена", context.asset_key)
+            return
+
+        asset_name = context.asset_key.path[-1]
+        conn = duckdb.connect(self._path)
+        try:
+            conn.execute("CREATE SCHEMA IF NOT EXISTS silver_raw")
+            if isinstance(obj, pd.DataFrame) and not obj.empty:
+                conn.register("_payload", obj)
+                conn.execute(
+                    f'CREATE OR REPLACE TABLE silver_raw."2_1_{asset_name}" AS SELECT * FROM _payload'
+                )
+                context.log.info(
+                    "silver_raw.2_1_%s: записано %d строк, %d колонок",
+                    asset_name, len(obj), len(obj.columns),
+                )
+            else:
+                conn.execute(
+                    f'CREATE TABLE IF NOT EXISTS silver_raw."2_1_{asset_name}" '
+                    f'(region_code VARCHAR, year INTEGER, age INTEGER)'
+                )
+                context.log.warning("silver_raw.2_1_%s: пустой DataFrame, таблица создана пустой", asset_name)
+        finally:
+            conn.close()
+
+    def load_input(self, context: InputContext) -> pd.DataFrame:
+        asset_name = context.asset_key.path[-1]
+        conn = duckdb.connect(self._path, read_only=True)
+        try:
+            return conn.execute(f'SELECT * FROM silver_raw."2_1_{asset_name}"').df()
         finally:
             conn.close()

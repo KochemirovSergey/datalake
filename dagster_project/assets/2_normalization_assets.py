@@ -78,6 +78,11 @@ def _find_data_start(group_df: pd.DataFrame) -> int:
 # BUGFIXES_AUDIT §4.4: нормализуем en-dash → дефис и пробелы перед matching
 _ETL_COLS = frozenset({"_etl_loaded_at", "_sheet_name", "_row_number"})
 
+_AGGREGATE_ROW_NAME = "Всего"  # общий агрегат для vpo / spo / oo
+
+# BUGFIXES_AUDIT: obuch_pk — колонки-агрегаты
+_PK_SKIP_COLUMN_NAMES = frozenset({"Всего (сумма гр.4 -13)"})
+
 # BUGFIXES_AUDIT: obuch_vpo — колонки-агрегаты, которые не должны попадать во 2-й слой
 _VPO_SKIP_COLUMN_NAMES = frozenset({
     "Принято",
@@ -507,6 +512,13 @@ def n_obuch_oo(
     context,
     obuch_oo: pd.DataFrame,
 ) -> pd.DataFrame:
+    if "row_name" in obuch_oo.columns:
+        before = len(obuch_oo)
+        obuch_oo = obuch_oo[obuch_oo["row_name"] != _AGGREGATE_ROW_NAME].copy()
+        dropped = before - len(obuch_oo)
+        if dropped:
+            context.log.info("[obuch_oo] Row Gate row_name='Всего': удалено %d строк-агрегатов", dropped)
+
     df = _normalize_postgres_df(obuch_oo, context, "obuch_oo")
     context.add_output_metadata({
         "total_rows": MetadataValue.int(len(df)),
@@ -527,12 +539,14 @@ def n_obuch_vpo(
     context,
     obuch_vpo: pd.DataFrame,
 ) -> pd.DataFrame:
+    before = len(obuch_vpo)
     if "column_name" in obuch_vpo.columns:
-        before = len(obuch_vpo)
         obuch_vpo = obuch_vpo[~obuch_vpo["column_name"].isin(_VPO_SKIP_COLUMN_NAMES)].copy()
-        dropped = before - len(obuch_vpo)
-        if dropped:
-            context.log.info("[obuch_vpo] Row Gate column_name: удалено %d строк-агрегатов", dropped)
+    if "row_name" in obuch_vpo.columns:
+        obuch_vpo = obuch_vpo[obuch_vpo["row_name"] != _AGGREGATE_ROW_NAME].copy()
+    dropped = before - len(obuch_vpo)
+    if dropped:
+        context.log.info("[obuch_vpo] Row Gate: удалено %d строк-агрегатов", dropped)
 
     df = _normalize_postgres_df(obuch_vpo, context, "obuch_vpo")
     context.add_output_metadata({
@@ -551,13 +565,14 @@ def n_obuch_spo(
     context,
     obuch_spo: pd.DataFrame,
 ) -> pd.DataFrame:
-    # Row Gate для SPO: исключаем агрегатные колонки до нормализации
+    before = len(obuch_spo)
     if "column_name" in obuch_spo.columns:
-        before = len(obuch_spo)
         obuch_spo = obuch_spo[~obuch_spo["column_name"].isin(_SPO_SKIP_COLUMN_NAMES)].copy()
-        dropped = before - len(obuch_spo)
-        if dropped:
-            context.log.info("[obuch_spo] Row Gate column_name: удалено %d строк-агрегатов", dropped)
+    if "row_name" in obuch_spo.columns:
+        obuch_spo = obuch_spo[obuch_spo["row_name"] != _AGGREGATE_ROW_NAME].copy()
+    dropped = before - len(obuch_spo)
+    if dropped:
+        context.log.info("[obuch_spo] Row Gate: удалено %d строк-агрегатов", dropped)
 
     df = _normalize_postgres_df(obuch_spo, context, "obuch_spo")
     context.add_output_metadata({
@@ -576,6 +591,13 @@ def n_obuch_pk(
     context,
     obuch_pk: pd.DataFrame,
 ) -> pd.DataFrame:
+    if "column_name" in obuch_pk.columns:
+        before = len(obuch_pk)
+        obuch_pk = obuch_pk[~obuch_pk["column_name"].isin(_PK_SKIP_COLUMN_NAMES)].copy()
+        dropped = before - len(obuch_pk)
+        if dropped:
+            context.log.info("[obuch_pk] Row Gate column_name: удалено %d строк-агрегатов", dropped)
+
     df = _normalize_postgres_df(obuch_pk, context, "obuch_pk")
     context.add_output_metadata({
         "total_rows": MetadataValue.int(len(df)),
@@ -610,6 +632,282 @@ def n_obshagi_vpo(
         "regions":    MetadataValue.int(df["region_code"].nunique() if not df.empty else 0),
         "source_tables": MetadataValue.text(
             str(df["_source_file"].unique().tolist()) if not df.empty else "[]"
+        ),
+    })
+    return df
+
+
+# ── Вспомогательные функции для нормализации возраста ─────────────────────────
+
+_DOSHK_AGE_GROUP_MAP: dict[str, int] = {
+    "age_0": 0, "age_1": 1, "age_2": 2, "age_3": 3,
+    "age_4": 4, "age_5": 5, "age_6": 6, "age_7plus": 7,
+}
+
+_AGE_SKIP_CATEGORIES = frozenset({"total", "unknown"})
+
+# Веса для open_end ("X лет и старше"): 7 строк вперёд, убывающее распределение
+_OPEN_END_WEIGHTS = [0.30, 0.20, 0.10, 0.10, 0.10, 0.10, 0.10]
+
+# Колонки, которые НЕ нужно распределять (метаданные и ключи)
+_NON_VALUE_COLS = frozenset({
+    "region_code", "year", "edu_level_code", "age", "age_category",
+    "row_name", "_source_file", "_etl_loaded_at",
+    "row_number", "column_number", "column_name", "column_metadata_1", "column_metadata_2",
+})
+
+
+def _parse_float(val) -> float | None:
+    """Безопасный парсинг числа из строки."""
+    if val is None:
+        return None
+    s = str(val).strip().replace("\u00a0", "").replace(" ", "")
+    if s in ("", "-", "nan", "None", "NULL"):
+        return None
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return None
+
+
+def _detect_value_cols(columns: list[str]) -> list[str]:
+    """Определяет колонки-значения (всё, что не в _NON_VALUE_COLS и не тег)."""
+    result = []
+    for c in columns:
+        if c in _NON_VALUE_COLS:
+            continue
+        # теги (тег_1, тег_2, ...) — категориальные, не распределяем
+        if re.match(r"^тег_\d+$", c):
+            continue
+        result.append(c)
+    return result
+
+
+def _expand_age_row(row: dict, age_min: int | None, age_max: int | None,
+                    category: str, value_cols: list[str]) -> list[dict]:
+    """
+    Раскрывает одну строку по правилам распределения возрастных диапазонов.
+
+    exact      → 1 строка, value без изменений
+    open_start → 1 строка (age = age_max), value без изменений
+    range      → (age_max − age_min + 1) строк, value делится поровну
+    open_end   → 7 строк от age_min, value по весам _OPEN_END_WEIGHTS
+    total/unknown → [] (строка пропускается)
+    """
+    if category in _AGE_SKIP_CATEGORIES:
+        return []
+
+    base = {k: v for k, v in row.items() if k != "row_name"}
+
+    orig_values = {c: _parse_float(row.get(c)) for c in value_cols}
+
+    if category == "exact":
+        r = {**base, "age": age_min, "age_category": category}
+        for c in value_cols:
+            r[c] = orig_values[c]
+        return [r]
+
+    if category == "open_start":
+        r = {**base, "age": age_max, "age_category": category}
+        for c in value_cols:
+            r[c] = orig_values[c]
+        return [r]
+
+    if category == "range" and age_min is not None and age_max is not None:
+        ages = list(range(age_min, age_max + 1))
+        n = len(ages)
+        rows = []
+        for age in ages:
+            r = {**base, "age": age, "age_category": category}
+            for c in value_cols:
+                v = orig_values[c]
+                r[c] = round(v / n, 4) if v is not None else None
+            rows.append(r)
+        return rows
+
+    if category == "open_end" and age_min is not None:
+        rows = []
+        for i, weight in enumerate(_OPEN_END_WEIGHTS):
+            r = {**base, "age": age_min + i, "age_category": category}
+            for c in value_cols:
+                v = orig_values[c]
+                r[c] = round(v * weight, 4) if v is not None else None
+            rows.append(r)
+        return rows
+
+    return []
+
+
+def _expand_age_from_col(df: pd.DataFrame, context, label: str, src_col: str = "row_name") -> pd.DataFrame:
+    """
+    Универсальная функция: раскрывает колонку src_col → age (int) + age_category.
+    Применяет распределение значений (range / open_end).
+    src_col удаляется из выхода; 'age' и 'age_category' добавляются.
+    """
+    if df.empty or src_col not in df.columns:
+        context.log.warning("[%s_age] Колонка '%s' отсутствует, возвращаем пустой DF", label, src_col)
+        return pd.DataFrame(columns=list(df.columns) + ["age", "age_category"])
+
+    value_cols = _detect_value_cols([c for c in df.columns if c != src_col])
+    records: list[dict] = []
+    skipped = 0
+
+    for _, row in df.iterrows():
+        raw = str(row.get(src_col) or "").strip()
+        if raw in ("nan", "None"):
+            raw = ""
+        age_min, age_max, category = parse_age(raw)
+        row_dict = {k: v for k, v in row.items() if k != src_col}
+        expanded = _expand_age_row(row_dict, age_min, age_max, category, value_cols)
+        if not expanded:
+            skipped += 1
+        records.extend(expanded)
+
+    if skipped:
+        context.log.info("[%s_age] Пропущено строк-агрегатов (total/unknown): %d", label, skipped)
+
+    if not records:
+        return pd.DataFrame(columns=[c for c in df.columns if c != src_col] + ["age", "age_category"])
+
+    result = pd.DataFrame(records)
+
+    priority = ["region_code", "year", "edu_level_code", "age", "age_category"]
+    rest = [c for c in result.columns if c not in priority]
+    return result[priority + rest].copy()
+
+
+@asset(
+    group_name="2_normalization_age",
+    io_manager_key="silver_raw_age_io_manager",
+    description="Нормализация возраста: обучающиеся ОО — row_name → age (int)",
+)
+def n_obuch_oo_age(context, n_obuch_oo: pd.DataFrame) -> pd.DataFrame:
+    df = _expand_age_from_col(n_obuch_oo, context, "obuch_oo")
+    context.add_output_metadata({
+        "total_rows":    MetadataValue.int(len(df)),
+        "regions":       MetadataValue.int(df["region_code"].nunique() if not df.empty else 0),
+        "age_categories": MetadataValue.text(
+            str(sorted(df["age_category"].unique().tolist())) if not df.empty else "[]"
+        ),
+        "age_range": MetadataValue.text(
+            f"{df['age'].min()}–{df['age'].max()}" if not df.empty else "—"
+        ),
+    })
+    return df
+
+
+@asset(
+    group_name="2_normalization_age",
+    io_manager_key="silver_raw_age_io_manager",
+    description="Нормализация возраста: обучающиеся ВПО — row_name → age (int)",
+)
+def n_obuch_vpo_age(context, n_obuch_vpo: pd.DataFrame) -> pd.DataFrame:
+    df = _expand_age_from_col(n_obuch_vpo, context, "obuch_vpo")
+    context.add_output_metadata({
+        "total_rows":    MetadataValue.int(len(df)),
+        "regions":       MetadataValue.int(df["region_code"].nunique() if not df.empty else 0),
+        "age_categories": MetadataValue.text(
+            str(sorted(df["age_category"].unique().tolist())) if not df.empty else "[]"
+        ),
+        "age_range": MetadataValue.text(
+            f"{df['age'].min()}–{df['age'].max()}" if not df.empty else "—"
+        ),
+    })
+    return df
+
+
+@asset(
+    group_name="2_normalization_age",
+    io_manager_key="silver_raw_age_io_manager",
+    description="Нормализация возраста: обучающиеся СПО — row_name → age (int)",
+)
+def n_obuch_spo_age(context, n_obuch_spo: pd.DataFrame) -> pd.DataFrame:
+    df = _expand_age_from_col(n_obuch_spo, context, "obuch_spo")
+    context.add_output_metadata({
+        "total_rows":    MetadataValue.int(len(df)),
+        "regions":       MetadataValue.int(df["region_code"].nunique() if not df.empty else 0),
+        "age_categories": MetadataValue.text(
+            str(sorted(df["age_category"].unique().tolist())) if not df.empty else "[]"
+        ),
+        "age_range": MetadataValue.text(
+            f"{df['age'].min()}–{df['age'].max()}" if not df.empty else "—"
+        ),
+    })
+    return df
+
+
+@asset(
+    group_name="2_normalization_age",
+    io_manager_key="silver_raw_age_io_manager",
+    description="Нормализация возраста: дошкольное образование — age_group → age (int)",
+)
+def n_obuch_doshkolka_age(context, n_obuch_doshkolka: pd.DataFrame) -> pd.DataFrame:
+    if n_obuch_doshkolka.empty or "age_group" not in n_obuch_doshkolka.columns:
+        context.log.warning("[doshkolka_age] Нет колонки age_group, возвращаем пустой DF")
+        return pd.DataFrame(columns=["region_code", "year", "edu_level_code", "territory_type", "age", "value"])
+
+    df = n_obuch_doshkolka.copy()
+    before = len(df)
+    df["age"] = df["age_group"].map(_DOSHK_AGE_GROUP_MAP)
+    df = df[df["age"].notna()].copy()
+    df["age"] = df["age"].astype(int)
+    dropped = before - len(df)
+    if dropped:
+        context.log.warning("[doshkolka_age] Нераспознанных age_group: %d строк", dropped)
+
+    df = df.drop(columns=["age_group"], errors="ignore")
+
+    priority = ["region_code", "year", "edu_level_code", "territory_type", "age"]
+    rest = [c for c in df.columns if c not in priority]
+    df = df[priority + rest].copy()
+
+    context.add_output_metadata({
+        "total_rows": MetadataValue.int(len(df)),
+        "regions":    MetadataValue.int(df["region_code"].nunique() if not df.empty else 0),
+        "age_range":  MetadataValue.text(
+            f"{df['age'].min()}–{df['age'].max()}" if not df.empty else "—"
+        ),
+    })
+    return df
+
+
+@asset(
+    group_name="2_normalization_age",
+    io_manager_key="silver_raw_age_io_manager",
+    description="Нормализация возраста: ПК/ДПО — column_name → age (int)",
+)
+def n_obuch_pk_age(context, n_obuch_pk: pd.DataFrame) -> pd.DataFrame:
+    # Возраст в ПК хранится в column_name ("моложе 25", "25-29", "65 и более" и т.д.)
+    df = _expand_age_from_col(n_obuch_pk, context, "obuch_pk", src_col="column_name")
+    context.add_output_metadata({
+        "total_rows":     MetadataValue.int(len(df)),
+        "regions":        MetadataValue.int(df["region_code"].nunique() if not df.empty else 0),
+        "age_categories": MetadataValue.text(
+            str(sorted(df["age_category"].unique().tolist())) if not df.empty else "[]"
+        ),
+        "age_range": MetadataValue.text(
+            f"{df['age'].min()}–{df['age'].max()}" if not df.empty else "—"
+        ),
+    })
+    return df
+
+
+@asset(
+    group_name="2_normalization_age",
+    io_manager_key="silver_raw_age_io_manager",
+    description="Нормализация возраста: население — age строка → age (int), 80+ раскрывается в 7 строк",
+)
+def n_naselenie_age(context, n_naselenie: pd.DataFrame) -> pd.DataFrame:
+    # Возраст в населении уже в колонке 'age' как строки: "5", "80+"
+    df = _expand_age_from_col(n_naselenie, context, "naselenie", src_col="age")
+    context.add_output_metadata({
+        "total_rows":     MetadataValue.int(len(df)),
+        "regions":        MetadataValue.int(df["region_code"].nunique() if not df.empty else 0),
+        "age_categories": MetadataValue.text(
+            str(sorted(df["age_category"].unique().tolist())) if not df.empty else "[]"
+        ),
+        "age_range": MetadataValue.text(
+            f"{df['age'].min()}–{df['age'].max()}" if not df.empty else "—"
         ),
     })
     return df

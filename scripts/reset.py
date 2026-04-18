@@ -6,6 +6,7 @@
   python scripts/reset.py 0      — очистить все слои
   python scripts/reset.py 1      — очистить Слой 1 (bronze)
   python scripts/reset.py 2      — очистить Слой 2 (silver_raw)
+  python scripts/reset.py 2.1    — очистить Слой 2.1 (нормализация возраста)
 """
 
 import os
@@ -31,6 +32,14 @@ LAYERS: dict[int, dict] = {
             '"2_n_obuch_doshkolka"', '"2_n_naselenie"', '"2_n_obuch_oo"',
             '"2_n_obuch_vpo"', '"2_n_obuch_spo"', '"2_n_obuch_pk"',
             '"2_n_obshagi_vpo"', '"2_n_obshagi_spo"', '"2_n_ped_kadry"',
+        ],
+    },
+    21: {
+        "label": "Слой 2.1 — silver_raw (нормализация возраста)",
+        "schema": "silver_raw",
+        "tables": [
+            '"2_1_n_obuch_doshkolka_age"', '"2_1_n_obuch_oo_age"',
+            '"2_1_n_obuch_vpo_age"', '"2_1_n_obuch_spo_age"',
         ],
     },
 }
@@ -83,8 +92,10 @@ def main() -> None:
 
     arg = sys.argv[1]
 
+    # "2.1" → ключ 21 в LAYERS
+    _arg_map = {"2.1": 21}
     try:
-        target = int(arg)
+        target = _arg_map.get(arg, int(arg))
     except ValueError:
         print(__doc__)
         sys.exit(1)
@@ -96,7 +107,8 @@ def main() -> None:
         layers_to_drop = [target]
         label = LAYERS[target]["label"]
     else:
-        print(f"Неизвестный слой: {target}. Доступны: 0 (все), {', '.join(str(k) for k in LAYERS)}")
+        available = ", ".join("2.1" if k == 21 else str(k) for k in LAYERS)
+        print(f"Неизвестный слой: {arg}. Доступны: 0 (все), {available}")
         sys.exit(1)
 
     print(f"Будет очищен: {label}")
