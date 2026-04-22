@@ -40,6 +40,9 @@ ASSET_TABLES: dict[str, list[str]] = {
     "obuch_pk":   ["пк_1_2_4_180"],
     "obshagi_vpo": ["впо_2_р1_3_8", "впо_2_р1_4_10"],
     "ped_oo":     ["oo_1_3_4_230", "oo_1_3_1_218", "oo_1_3_2_221"],
+    "ped_spo":    ["спо_1_р3_1_87", "спо_1_p3_7_1_288", "спо_1_p3_6_284", "спо_1_p3_2_273"],
+    "ped_vpo":    ["впо_1_р3_1_86", "впо_2_p3_2_275", "впо_1_p3_6_283", "впо_1_p3_7_1_287"],
+    "obshagi_spo": ["спо_2_р1_3_7", "спо_2_р1_4_9"],
 }
 
 
@@ -111,3 +114,12 @@ def read_obshagi_vpo() -> pd.DataFrame:
 
 def read_ped_oo() -> pd.DataFrame:
     return extract_asset("ped_oo")
+
+def read_ped_spo() -> pd.DataFrame:
+    return extract_asset("ped_spo")
+
+def read_ped_vpo() -> pd.DataFrame:
+    return extract_asset("ped_vpo")
+
+def read_obshagi_spo() -> pd.DataFrame:
+    return extract_asset("obshagi_spo")

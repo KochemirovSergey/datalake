@@ -143,6 +143,23 @@ def obuch_pk(context: AssetExecutionContext) -> pd.DataFrame:
 @asset(
     group_name="1_postgres",
     io_manager_key="bronze_io_manager",
+    description="Первичка: Postgres (Общаги СПО). Таблицы: спо_2_р1_3_7, спо_2_р1_4_9",
+)
+def obshagi_spo(context: AssetExecutionContext) -> pd.DataFrame:
+    from ingestion.postgres_extractor import read_obshagi_spo
+    df = read_obshagi_spo()
+    context.add_output_metadata({
+        "total_rows":    MetadataValue.int(len(df)),
+        "source_tables": MetadataValue.text(
+            str(df["_source_file"].unique().tolist()) if not df.empty else "[]"
+        ),
+    })
+    return df
+
+
+@asset(
+    group_name="1_postgres",
+    io_manager_key="bronze_io_manager",
     description="Первичка: Postgres (Общаги ВПО). Таблицы: впо_2_р1_3_8, впо_2_р1_4_10",
 )
 def obshagi_vpo(context: AssetExecutionContext) -> pd.DataFrame:
@@ -167,6 +184,40 @@ def ped_oo(context: AssetExecutionContext) -> pd.DataFrame:
     df = read_ped_oo()
     context.add_output_metadata({
         "total_rows":   MetadataValue.int(len(df)),
+        "source_tables": MetadataValue.text(
+            str(df["_source_file"].unique().tolist()) if not df.empty else "[]"
+        ),
+    })
+    return df
+
+
+@asset(
+    group_name="1_postgres",
+    io_manager_key="bronze_io_manager",
+    description="Первичка: Postgres (Педагоги ВПО). Таблицы: впо_1_р3_1_86, впо_2_p3_2_275, впо_1_p3_6_283, впо_1_p3_7_1_287",
+)
+def ped_vpo(context: AssetExecutionContext) -> pd.DataFrame:
+    from ingestion.postgres_extractor import read_ped_vpo
+    df = read_ped_vpo()
+    context.add_output_metadata({
+        "total_rows":    MetadataValue.int(len(df)),
+        "source_tables": MetadataValue.text(
+            str(df["_source_file"].unique().tolist()) if not df.empty else "[]"
+        ),
+    })
+    return df
+
+
+@asset(
+    group_name="1_postgres",
+    io_manager_key="bronze_io_manager",
+    description="Первичка: Postgres (Педагоги СПО). Таблицы: спо_1_р3_1_87, спо_1_p3_7_1_288, спо_1_p3_6_284, спо_1_p3_2_273",
+)
+def ped_spo(context: AssetExecutionContext) -> pd.DataFrame:
+    from ingestion.postgres_extractor import read_ped_spo
+    df = read_ped_spo()
+    context.add_output_metadata({
+        "total_rows":    MetadataValue.int(len(df)),
         "source_tables": MetadataValue.text(
             str(df["_source_file"].unique().tolist()) if not df.empty else "[]"
         ),
