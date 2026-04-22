@@ -126,6 +126,72 @@ def _read_file(path: str) -> dict[str, dict]:
     return _read_xlsx_file(path)
 
 
+# ── Классификатор файлов педагогов дошколки ───────────────────────────────────
+
+_PED_DOSHKOLKA_CATEGORIES = [
+    # возраст (зелёный)
+    (re.compile(r"tab20[_.]?1|Таблица\s*№\s*20[.,]1|Таблица\s*№\s*10\b", re.I), "возраст"),
+    # стаж (сиреневый)
+    (re.compile(r"tab20[_.]?2|Таблица\s*№\s*20[.,]2|Таблица\s*№\s*11\b", re.I), "стаж"),
+    # образование (синий)
+    (re.compile(r"tab20[_.]?3|Таблица\s*№\s*20[.,]3|Таблица\s*№\s*9\b", re.I), "образование"),
+    # ставки (красный)
+    (re.compile(r"Таблица\s*№\s*(?:13|8)\b", re.I), "ставки"),
+]
+_PED_DOSHKOLKA_SKIP = re.compile(r"tab4a|Таблица\s*№\s*7\b|Таблица\s*№\s*4\s*[Аа]", re.I)
+
+
+def _classify_ped_file(fname: str) -> str | None:
+    """Возвращает категорию педагогического файла или None (пропустить)."""
+    if _PED_DOSHKOLKA_SKIP.search(fname):
+        return None
+    for pattern, category in _PED_DOSHKOLKA_CATEGORIES:
+        if pattern.search(fname):
+            return category
+    return None
+
+
+def extract_ped_doshkolka(data_dir: str) -> pd.DataFrame:
+    """
+    Читает файлы педагогов из папки Дошколка (пропускает файлы воспитанников).
+    Добавляет колонку _ped_category: 'возраст', 'стаж', 'образование', 'ставки'.
+    """
+    loaded_at = datetime.now(tz=timezone.utc)
+    files = discover_files(data_dir)
+
+    all_rows: list[dict] = []
+    for year, path in files:
+        fname = os.path.basename(path)
+        category = _classify_ped_file(fname)
+        if category is None:
+            continue
+
+        source_file = os.path.relpath(path, BASE_DIR).replace("\\", "/")
+        all_sheets = _read_file(path)
+
+        for sheet_name, sheet_data in all_sheets.items():
+            rows = sheet_data["rows"]
+            for row_number, row in enumerate(rows):
+                record: dict = {
+                    "_etl_loaded_at":     loaded_at,
+                    "_source_file":       source_file,
+                    "_sheet_name":        sheet_name,
+                    "_row_number":        row_number,
+                    "_year":              year,
+                    "_range_address":     sheet_data["range_address"],
+                    "_merged_cells_meta": sheet_data["merged_meta"],
+                    "_ped_category":      category,
+                }
+                for col_idx, val in enumerate(row):
+                    record[f"col_{col_idx}"] = str(val) if val is not None else None
+                all_rows.append(record)
+
+    if not all_rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(all_rows)
+
+
 # ── Точка входа ────────────────────────────────────────────────────────────────
 
 def extract(data_dir: str, flat: bool = False) -> pd.DataFrame:

@@ -48,6 +48,27 @@ def obuch_doshkolka(context: AssetExecutionContext) -> pd.DataFrame:
 @asset(
     group_name="1_excel",
     io_manager_key="bronze_io_manager",
+    description="Первичка: Excel (Дошколка, педагоги). Категории: возраст, стаж, образование, ставки. Источник: data/Дошколка/",
+)
+def ped_doshkolka(context: AssetExecutionContext) -> pd.DataFrame:
+    from ingestion.excel_extractor import extract_ped_doshkolka
+    data_dir = os.path.join(_project_root, "data", "Дошколка")
+    df = extract_ped_doshkolka(data_dir)
+    context.add_output_metadata({
+        "total_rows":   MetadataValue.int(len(df)),
+        "categories":   MetadataValue.text(
+            str(sorted(df["_ped_category"].unique().tolist())) if not df.empty else "[]"
+        ),
+        "years":        MetadataValue.text(
+            str(sorted(df["_year"].unique().tolist())) if not df.empty else "[]"
+        ),
+    })
+    return df
+
+
+@asset(
+    group_name="1_excel",
+    io_manager_key="bronze_io_manager",
     description="Первичка: Excel (Население). Источник: data/Население/",
 )
 def naselenie(context: AssetExecutionContext) -> pd.DataFrame:
