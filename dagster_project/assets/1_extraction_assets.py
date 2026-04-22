@@ -88,6 +88,28 @@ def naselenie(context: AssetExecutionContext) -> pd.DataFrame:
 # ── 1_postgres ─────────────────────────────────────────────────────────────────
 
 @asset(
+    group_name="1_excel",
+    io_manager_key="bronze_io_manager",
+    description="Первичка: Excel (ПК_1, все листы). Источник: data/ПК_1/ (2014–2024). "
+                "Включает Россия.xlsx + Регионы/*.xlsx. Фильтрация по разделам — на слое 2.",
+)
+def pk_1_raw(context: AssetExecutionContext) -> pd.DataFrame:
+    from ingestion.excel_extractor import extract_pk1
+    data_dir = os.path.join(_project_root, "data", "ПК_1")
+    df = extract_pk1(data_dir)
+    context.add_output_metadata({
+        "total_rows":    MetadataValue.int(len(df)),
+        "total_files":   MetadataValue.int(df["_source_file"].nunique() if not df.empty else 0),
+        "total_sheets":  MetadataValue.int(df["_sheet_name"].nunique() if not df.empty else 0),
+        "years":         MetadataValue.text(
+            str(sorted(df["_year"].unique().tolist())) if not df.empty else "[]"
+        ),
+        "regions_count": MetadataValue.int(df["_region"].nunique() if not df.empty else 0),
+    })
+    return df
+
+
+@asset(
     group_name="1_postgres",
     io_manager_key="bronze_io_manager",
     description="Первичка: Postgres (Обуч. ОО). Таблицы: oo_1_2_7_*, oo_1_2_14_*, discipuli",

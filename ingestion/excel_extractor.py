@@ -192,6 +192,85 @@ def extract_ped_doshkolka(data_dir: str) -> pd.DataFrame:
     return pd.DataFrame(all_rows)
 
 
+# ── Обнаружение файлов ПК_1 ───────────────────────────────────────────────────
+
+def discover_files_pk1(data_dir: str) -> list[tuple[int, str, str]]:
+    """
+    Структура ПК_1:
+      data_dir/{year}/Россия.xlsx          → region = "Россия"
+      data_dir/{year}/Регионы/{регион}.xlsx → region = имя файла без расширения
+
+    2014–2017: только Россия.xlsx
+    2018–2024: Россия.xlsx + Регионы/*.xlsx
+
+    Возвращает список (year, path, region_name).
+    """
+    result: list[tuple[int, str, str]] = []
+    for entry in sorted(os.scandir(data_dir), key=lambda e: e.name):
+        if not entry.is_dir():
+            continue
+        try:
+            year = int(entry.name)
+        except ValueError:
+            continue
+
+        # Россия.xlsx в корне года
+        for fname in os.listdir(entry.path):
+            if fname.startswith("~"):
+                continue
+            if fname.lower().endswith((".xls", ".xlsx")):
+                result.append((year, os.path.join(entry.path, fname), "Россия"))
+
+        # Регионы/ подпапка
+        regions_dir = os.path.join(entry.path, "Регионы")
+        if os.path.isdir(regions_dir):
+            for fname in sorted(os.listdir(regions_dir)):
+                if fname.startswith("~"):
+                    continue
+                if fname.lower().endswith((".xls", ".xlsx")):
+                    region_name = os.path.splitext(fname)[0]
+                    result.append((year, os.path.join(regions_dir, fname), region_name))
+
+    return result
+
+
+def extract_pk1(data_dir: str) -> pd.DataFrame:
+    """
+    Читает все файлы и все листы из data_dir (структура ПК_1).
+    Добавляет lineage-колонки включая _region.
+    Никакой фильтрации — слой 2 отберёт нужные разделы.
+    """
+    loaded_at = datetime.now(tz=timezone.utc)
+    files = discover_files_pk1(data_dir)
+
+    all_rows: list[dict] = []
+    for year, path, region_name in files:
+        source_file = os.path.relpath(path, BASE_DIR).replace("\\", "/")
+        all_sheets = _read_file(path)
+
+        for sheet_name, sheet_data in all_sheets.items():
+            rows = sheet_data["rows"]
+            for row_number, row in enumerate(rows):
+                record: dict = {
+                    "_etl_loaded_at":     loaded_at,
+                    "_source_file":       source_file,
+                    "_sheet_name":        sheet_name,
+                    "_row_number":        row_number,
+                    "_year":              year,
+                    "_region":            region_name,
+                    "_range_address":     sheet_data["range_address"],
+                    "_merged_cells_meta": sheet_data["merged_meta"],
+                }
+                for col_idx, val in enumerate(row):
+                    record[f"col_{col_idx}"] = str(val) if val is not None else None
+                all_rows.append(record)
+
+    if not all_rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(all_rows)
+
+
 # ── Точка входа ────────────────────────────────────────────────────────────────
 
 def extract(data_dir: str, flat: bool = False) -> pd.DataFrame:
