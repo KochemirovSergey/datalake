@@ -1,35 +1,28 @@
 """
-PostgreSQL → pd.DataFrame extractor.
+SQLite → pd.DataFrame extractor.
 Только читает данные. Не пишет в БД.
 
 Добавляет lineage-колонки к каждой строке:
   _etl_loaded_at — timestamp загрузки (UTC)
-  _source_file   — имя таблицы-источника (schema.table)
-  _sheet_name    — None (не применимо для PostgreSQL)
+  _source_file   — имя таблицы-источника
+  _sheet_name    — None (не применимо для SQLite)
   _row_number    — порядковый номер строки в выгрузке
 
-Все значения из PostgreSQL приводятся к строкам (str).
+Все значения из SQLite приводятся к строкам (str).
 Несколько исходных таблиц для одной сущности объединяются через pd.concat.
 """
 
 import os
+import sqlite3
 from datetime import datetime, timezone
 
 import pandas as pd
-import psycopg2
-import psycopg2.extras
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-SRC_DB = {
-    "host":     os.getenv("PG_HOST", "localhost"),
-    "port":     int(os.getenv("PG_PORT", "5432")),
-    "database": os.getenv("PG_DATABASE", "etl_db"),
-    "user":     os.getenv("PG_USER", "etl_user"),
-    "password": os.getenv("PG_PASSWORD", "etl_password"),
-}
+SQLITE_PATH = os.getenv("SQLITE_PATH", os.path.join(BASE_DIR, "etl_db.sqlite"))
 
-# Маппинг логических ассетов к таблицам PostgreSQL
+# Маппинг логических ассетов к таблицам SQLite
 ASSET_TABLES: dict[str, list[str]] = {
     "obuch_oo": [
         "oo_1_2_7_2_211_v2",
@@ -50,14 +43,13 @@ ASSET_TABLES: dict[str, list[str]] = {
 }
 
 
-def _read_pg_table(pg_table: str, loaded_at: datetime) -> pd.DataFrame:
-    """Читает одну таблицу из схемы public PostgreSQL."""
-    source_file = f"public.{pg_table}"
-    conn = psycopg2.connect(**SRC_DB)
+def _read_sqlite_table(table: str, loaded_at: datetime) -> pd.DataFrame:
+    """Читает одну таблицу из SQLite."""
+    conn = sqlite3.connect(SQLITE_PATH)
+    conn.row_factory = sqlite3.Row
     try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(f'SELECT * FROM "public"."{pg_table}"')
-            rows = cur.fetchall()
+        cur = conn.execute(f'SELECT * FROM "{table}"')
+        rows = cur.fetchall()
 
         if not rows:
             return pd.DataFrame()
@@ -66,11 +58,12 @@ def _read_pg_table(pg_table: str, loaded_at: datetime) -> pd.DataFrame:
         for row_number, row in enumerate(rows):
             record: dict = {
                 "_etl_loaded_at": loaded_at,
-                "_source_file":   source_file,
+                "_source_file":   table,
                 "_sheet_name":    None,
                 "_row_number":    row_number,
             }
-            for col, val in row.items():
+            for col in row.keys():
+                val = row[col]
                 record[col] = str(val) if val is not None else None
             records.append(record)
 
@@ -81,7 +74,7 @@ def _read_pg_table(pg_table: str, loaded_at: datetime) -> pd.DataFrame:
 
 def extract_asset(asset_name: str) -> pd.DataFrame:
     """
-    Извлекает данные для конкретного ассета из всех его PostgreSQL-таблиц.
+    Извлекает данные для конкретного ассета из всех его SQLite-таблиц.
     Таблицы объединяются через pd.concat; колонка _source_file различает источники.
     """
     tables = ASSET_TABLES.get(asset_name)
@@ -90,7 +83,7 @@ def extract_asset(asset_name: str) -> pd.DataFrame:
                          f"Доступные: {list(ASSET_TABLES)}")
 
     loaded_at = datetime.now(tz=timezone.utc)
-    dfs = [_read_pg_table(t, loaded_at) for t in tables]
+    dfs = [_read_sqlite_table(t, loaded_at) for t in tables]
     dfs = [df for df in dfs if not df.empty]
 
     if not dfs:
