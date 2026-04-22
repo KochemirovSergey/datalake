@@ -19,3 +19,8 @@ coverage_wide_202604151405.csv
 .DS_Store
 kocha/kocha
 kocha/kocha.pub
+data/VPO-1_za_2019_g./
+data/VPO_1_2018 (1)/
+data/Дошколка/
+data/ПК_1/
+etl_db.sqlite

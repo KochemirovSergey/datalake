@@ -46,6 +46,17 @@ def _to_int(val) -> int | None:
         return None
 
 
+def _to_float(val) -> float | None:
+    if val is None:
+        return None
+    s = str(val).strip().replace(" ", "").replace(" ", "")
+    if s in ("", "-", "nan", "None", "NULL", "none"):
+        return None
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return None
+
 def _is_numbering_row(col_0: str | None, col_1: str | None) -> bool:
     """True если строка — нумератор колонок (A/1/2/3... или 1.0/2.0...)."""
     c0 = str(col_0 or "").strip()
@@ -154,6 +165,11 @@ _PED_KADRY_SKIP_ROW_NUMBERS = frozenset({
     "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47", "48",
     "49", "50", "51", "52", "53", "54", "55", "56", "57", "58", "59", "60", "61", "62", "63",
     "64", "65", "66", "67", "68",
+})
+
+# obshagi_spo — агрегатная колонка-сумма из таблицы спо_2_р1_3_7
+_OBSHAGI_SPO_SKIP_COLUMN_NAMES = frozenset({
+    "Всего (сумма граф 9-12)",
 })
 
 # BUGFIXES_AUDIT: obuch_spo — колонки-агрегаты, которые не должны попадать во 2-й слой
@@ -315,6 +331,71 @@ _DOSHK_SHEET_TERRITORY: dict[str, str] = {
     "1": "urban", "T_1": "urban",
     "2": "rural", "T_2": "rural",
 }
+
+
+# ── Конфиги для Excel (Педагоги дошколки) ─────────────────────────────────────
+
+# Листы-агрегаты: РФ (643) и коды ФО (трёхзначные)
+_PED_DOSHK_SKIP_SHEETS = frozenset({
+    "643",                                    # Российская Федерация
+    "030", "031", "038", "033", "034",        # ЦФО, СЗФО, СКФО, ПФО, УФО
+    "040", "041", "042",                      # ЮФО, СФО, ДФО
+})
+
+# Паттерн строки «Педагогические работники - всего»
+_PED_DOSHK_WORKER_ROW = re.compile(
+    r"педагогические\s+работники\s*[–—-]?\s*всего",
+    re.IGNORECASE,
+)
+
+# col_index → metric_name (col_0 = row_name, col_1 = Всего — агрегат, пропускаем)
+_PED_DOSHK_VOZRAST_COLS: dict[int, str] = {
+    2: "до_25", 3: "25_29", 4: "30_34", 5: "35_39",
+    6: "40_44", 7: "45_49", 8: "50_54", 9: "55_59",
+    10: "60_64", 11: "65_плюс",
+}
+_PED_DOSHK_OBRAZOVANIE_COLS: dict[int, str] = {
+    2: "высшее",       # col_3 — высшее педагогическое (подвид), пропускаем
+    4: "среднее_проф", # col_5 — среднее педагогическое (подвид), пропускаем
+}
+_PED_DOSHK_STAVKI_COLS: dict[int, str] = {
+    1: "ставок_по_штату",
+    2: "фактически_занято",
+}
+# Стаж: col 1 — Всего, col 2–7 — общий стаж, col 8 — пед.стаж всего, col 9–14 — пед.стаж
+_PED_DOSHK_STAZH_OBSHIY: dict[int, str] = {
+    2: "до_3", 3: "3_5", 4: "5_10", 5: "10_15", 6: "15_20", 7: "20_плюс",
+}
+_PED_DOSHK_STAZH_PED: dict[int, str] = {
+    9: "до_3", 10: "3_5", 11: "5_10", 12: "10_15", 13: "15_20", 14: "20_плюс",
+}
+
+_PED_DOSHK_OKATO_CACHE: dict[str, str] | None = None
+
+
+def _build_okato_lookup() -> dict[str, str]:
+    """ОКАТО-код → region_code через OKATO_territories.csv + regions.json."""
+    global _PED_DOSHK_OKATO_CACHE
+    if _PED_DOSHK_OKATO_CACHE is not None:
+        return _PED_DOSHK_OKATO_CACHE
+
+    csv_path = os.path.join(_project_root, "data", "OKATO_territories.csv")
+    okato_df = pd.read_csv(csv_path, dtype=str)
+    region_lookup = build_lookup()
+
+    result: dict[str, str] = {}
+    for _, row in okato_df.iterrows():
+        raw_code = str(row.get("Код ОКАТО") or "").strip()
+        okato_code = raw_code.rstrip("*")
+        region_name = str(row.get("Наименование территории") or "").strip()
+        if not okato_code or not region_name:
+            continue
+        code = lookup_region(region_name, region_lookup)
+        if code and code not in QUARANTINE_CODES:
+            result[okato_code] = code
+
+    _PED_DOSHK_OKATO_CACHE = result
+    return result
 
 
 # ── Конфиги для Excel (Население) ─────────────────────────────────────────────
@@ -928,12 +1009,178 @@ def n_naselenie_age(context, n_naselenie: pd.DataFrame) -> pd.DataFrame:
 @asset(
     group_name="2_normalization",
     io_manager_key="silver_raw_io_manager",
-    tags=UNIMPLEMENTED,
-    description="Нормализация: общежития СПО — заглушка (нет данных)",
+    description="Нормализация: общежития СПО (Postgres, 2 таблицы)",
 )
-def n_obshagi_spo(context) -> pd.DataFrame:
-    context.log.warning("n_obshagi_spo: источник не реализован, возвращаем пустой DataFrame")
-    return pd.DataFrame(columns=["region_code", "region_name_raw", "year"])
+def n_obshagi_spo(
+    context,
+    obshagi_spo: pd.DataFrame,
+) -> pd.DataFrame:
+    if "column_name" in obshagi_spo.columns:
+        before = len(obshagi_spo)
+        obshagi_spo = obshagi_spo[
+            ~obshagi_spo["column_name"].isin(_OBSHAGI_SPO_SKIP_COLUMN_NAMES)
+        ].copy()
+        dropped = before - len(obshagi_spo)
+        if dropped:
+            context.log.info("[obshagi_spo] Row Gate: удалено %d строк-агрегатов", dropped)
+
+    df = _normalize_postgres_df(obshagi_spo, context, "obshagi_spo")
+    df["edu_level_code"] = "2.5"
+    context.add_output_metadata({
+        "total_rows": MetadataValue.int(len(df)),
+        "regions":    MetadataValue.int(df["region_code"].nunique() if not df.empty else 0),
+        "source_tables": MetadataValue.text(
+            str(df["_source_file"].unique().tolist()) if not df.empty else "[]"
+        ),
+    })
+    return df
+
+
+@asset(
+    group_name="2_normalization",
+    io_manager_key="silver_raw_io_manager",
+    description="Нормализация: педагоги СПО (Postgres, 4 таблицы)",
+)
+def n_ped_spo(
+    context,
+    ped_spo: pd.DataFrame,
+) -> pd.DataFrame:
+    df = _normalize_postgres_df(ped_spo, context, "ped_spo")
+    df["edu_level_code"] = "2.5.1;2.5.2"
+    context.add_output_metadata({
+        "total_rows": MetadataValue.int(len(df)),
+        "regions":    MetadataValue.int(df["region_code"].nunique() if not df.empty else 0),
+        "source_tables": MetadataValue.text(
+            str(df["_source_file"].unique().tolist()) if not df.empty else "[]"
+        ),
+    })
+    return df
+
+
+@asset(
+    group_name="2_normalization",
+    io_manager_key="silver_raw_io_manager",
+    description="Нормализация: педагоги ВПО (Postgres, 4 таблицы)",
+)
+def n_ped_vpo(
+    context,
+    ped_vpo: pd.DataFrame,
+) -> pd.DataFrame:
+    df = _normalize_postgres_df(ped_vpo, context, "ped_vpo")
+    df["edu_level_code"] = "2.6;2.7;2.8"
+    context.add_output_metadata({
+        "total_rows": MetadataValue.int(len(df)),
+        "regions":    MetadataValue.int(df["region_code"].nunique() if not df.empty else 0),
+        "source_tables": MetadataValue.text(
+            str(df["_source_file"].unique().tolist()) if not df.empty else "[]"
+        ),
+    })
+    return df
+
+
+
+@asset(
+    group_name="2_normalization",
+    io_manager_key="silver_raw_io_manager",
+    description=(
+        "Нормализация: педагоги дошколки (Excel, категории: возраст/стаж/образование/ставки). "
+        "Листы = ОКАТО-коды. Строка = 'Педагогические работники - всего'."
+    ),
+)
+def n_ped_doshkolka(
+    context,
+    ped_doshkolka: pd.DataFrame,
+) -> pd.DataFrame:
+    _EMPTY_COLS = ["region_code", "year", "edu_level_code", "ped_category",
+                   "metric_name", "stazh_type", "value", "_source_file"]
+    if ped_doshkolka.empty:
+        return pd.DataFrame(columns=_EMPTY_COLS)
+
+    okato_lookup = _build_okato_lookup()
+    records: list[dict] = []
+    unmatched_sheets: list[str] = []
+    missing_ped_row: list[str] = []
+
+    for (source_file, sheet_name, year, ped_category), group in ped_doshkolka.groupby(
+        ["_source_file", "_sheet_name", "_year", "_ped_category"]
+    ):
+        sheet_str = str(sheet_name).strip()
+
+        if sheet_str in _PED_DOSHK_SKIP_SHEETS:
+            continue
+
+        region_code = okato_lookup.get(sheet_str)
+        if region_code is None:
+            unmatched_sheets.append(sheet_str)
+            continue
+        if region_code in QUARANTINE_CODES:
+            continue
+
+        data_start = _find_data_start(group)
+        data_rows = group[group["_row_number"] >= data_start].sort_values("_row_number")
+
+        ped_row = None
+        for _, row in data_rows.iterrows():
+            raw = str(row.get("col_0") or "").strip()
+            if _PED_DOSHK_WORKER_ROW.search(raw):
+                ped_row = row
+                break
+
+        if ped_row is None:
+            missing_ped_row.append(f"{sheet_str}/{year}/{ped_category}")
+            continue
+
+        base: dict = {
+            "region_code":    region_code,
+            "year":           int(year),
+            "edu_level_code": "1.1",
+            "ped_category":   str(ped_category),
+            "_source_file":   str(source_file),
+        }
+
+        if ped_category == "возраст":
+            for col_idx, metric_name in _PED_DOSHK_VOZRAST_COLS.items():
+                records.append({**base, "metric_name": metric_name, "stazh_type": None,
+                                 "value": _to_int(ped_row.get(f"col_{col_idx}"))})
+
+        elif ped_category == "образование":
+            for col_idx, metric_name in _PED_DOSHK_OBRAZOVANIE_COLS.items():
+                records.append({**base, "metric_name": metric_name, "stazh_type": None,
+                                 "value": _to_int(ped_row.get(f"col_{col_idx}"))})
+
+        elif ped_category == "ставки":
+            for col_idx, metric_name in _PED_DOSHK_STAVKI_COLS.items():
+                records.append({**base, "metric_name": metric_name, "stazh_type": None,
+                                 "value": _to_float(ped_row.get(f"col_{col_idx}"))})
+
+        elif ped_category == "стаж":
+            for col_idx, metric_name in _PED_DOSHK_STAZH_OBSHIY.items():
+                records.append({**base, "metric_name": metric_name, "stazh_type": "общий",
+                                 "value": _to_int(ped_row.get(f"col_{col_idx}"))})
+            for col_idx, metric_name in _PED_DOSHK_STAZH_PED.items():
+                records.append({**base, "metric_name": metric_name, "stazh_type": "педагогический",
+                                 "value": _to_int(ped_row.get(f"col_{col_idx}"))})
+
+    if unmatched_sheets:
+        for sheet, cnt in Counter(unmatched_sheets).most_common(5):
+            context.log.warning("[ped_doshkolka] Нераспознанный лист (×%d): %r", cnt, sheet)
+    if missing_ped_row:
+        for key in missing_ped_row[:5]:
+            context.log.warning("[ped_doshkolka] Нет строки пед.работников: %s", key)
+
+    df_out = pd.DataFrame(records) if records else pd.DataFrame(columns=_EMPTY_COLS)
+    context.add_output_metadata({
+        "total_rows":    MetadataValue.int(len(df_out)),
+        "regions":       MetadataValue.int(df_out["region_code"].nunique() if not df_out.empty else 0),
+        "years":         MetadataValue.text(
+            str(sorted(df_out["year"].unique().tolist())) if not df_out.empty else "[]"
+        ),
+        "categories":    MetadataValue.text(
+            str(sorted(df_out["ped_category"].unique().tolist())) if not df_out.empty else "[]"
+        ),
+        "unmatched_cnt": MetadataValue.int(len(unmatched_sheets)),
+    })
+    return df_out
 
 
 @asset(

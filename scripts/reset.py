@@ -7,6 +7,7 @@
   python scripts/reset.py 1      — очистить Слой 1 (bronze)
   python scripts/reset.py 2      — очистить Слой 2 (silver_raw)
   python scripts/reset.py 2.1    — очистить Слой 2.1 (нормализация возраста)
+  python scripts/reset.py 3      — очистить Слой 3 (silver_agg)
 """
 
 import os
@@ -40,6 +41,14 @@ LAYERS: dict[int, dict] = {
         "tables": [
             '"2_1_n_obuch_doshkolka_age"', '"2_1_n_obuch_oo_age"',
             '"2_1_n_obuch_vpo_age"', '"2_1_n_obuch_spo_age"',
+        ],
+    },
+    3: {
+        "label": "Слой 3 — silver_agg (агрегация)",
+        "schema": "silver_agg",
+        "tables": [
+            '"3_a_obuch_oo"', '"3_a_obuch_vpo"', '"3_a_obuch_spo"',
+            '"3_a_obshagi_vpo"', '"3_a_obshagi_spo"', '"3_a_ped_kadry"',
         ],
     },
 }

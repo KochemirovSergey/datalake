@@ -1,15 +1,20 @@
 import pandas as pd
 from dagster import MetadataValue, asset
 
-# Общие колонки-метаданные, не имеющие смысла после группировки
+# Колонки, дропаемые перед агрегацией: ETL-метаданные + структурные колонки Postgres
+# (id, координаты, теги и т.п. не являются метриками и не должны суммироваться)
 _META_COLS = frozenset({
-    "age_category",
-    "_source_file",
-    "_etl_loaded_at",
-    "column_metadata_1",
-    "column_metadata_2",
-    "column_number",
-    "row_number",
+    # ETL
+    "age_category", "_source_file", "_etl_loaded_at",
+    # Postgres structural
+    "id", "created_at", "column_id",
+    "column_metadata_1", "column_metadata_2", "column_metadata_3",
+    "column_number", "column_coordinate",
+    "row_number", "row_coordinate", "row_level", "row_parent_name",
+    "статформа", "тег_1", "тег_2", "тег_3",
+    # discipuli-specific (всегда None у остальных таблиц)
+    "Уровень субъектности", "Объект", "Год", "Вид и уровень образования",
+    "Курс/класс", "Определение", "гос/негос", "Значение", "Источник",
 })
 
 # Ключи для таблиц с возрастом (Слой 2.1 → Слой 3)
@@ -23,7 +28,7 @@ _DROP_OBSHAGI = _META_COLS
 
 # Ключи для ped_kadry: row_name сохраняем (там тип педагога), edu_level_code уже проставлен
 _KEY_PED    = ["region_code", "year", "edu_level_code", "row_name"]
-_DROP_PED   = _META_COLS
+_DROP_PED   = _META_COLS | {"column_name"}
 
 
 def _aggregate_table(
@@ -47,6 +52,11 @@ def _aggregate_table(
     if missing_keys:
         context.log.error("[%s] Отсутствуют ключевые колонки: %s", label, missing_keys)
         return df
+
+    # Postgres/DuckDB возвращает числа как str/StringDtype — конвертируем в float
+    for col in df.columns:
+        if col not in key_cols and not pd.api.types.is_numeric_dtype(df[col]):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
     value_cols = [
         c for c in df.columns
